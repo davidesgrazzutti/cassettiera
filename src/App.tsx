@@ -44,6 +44,7 @@ type DrawerSummary = {
   countArticoli: number;
   quantitaTotale: number;
   sottoScorta: boolean;
+  tuttiZero: boolean;
 };
 
 const initialDrawers: Cassetto[] = Array.from({ length: 81 }, (_, i) => {
@@ -181,14 +182,18 @@ function getDrawerSummary(item: Cassetto | null | undefined): DrawerSummary {
   const sottoScorta = articoli.some(
     (a) => (Number(a.quantita) || 0) <= (Number(a.quantitaMinima) || 0)
   );
+  const tuttiZero = articoli.length > 0 && articoli.every((a) => (Number(a.quantita) || 0) === 0);
 
-  return { countArticoli, quantitaTotale, sottoScorta };
+  return { countArticoli, quantitaTotale, sottoScorta, tuttiZero };
 }
 
 function getDrawerColors(item: Cassetto): { border: string; background: string } {
-  const { sottoScorta } = getDrawerSummary(item);
+  const { sottoScorta, tuttiZero } = getDrawerSummary(item);
 
   if (item.stato === "Disattivato") {
+    return { border: "#fca5a5", background: "#fef2f2" };
+  }
+  if (tuttiZero) {
     return { border: "#fca5a5", background: "#fef2f2" };
   }
   if (item.stato === "Vuoto") {
@@ -443,8 +448,8 @@ export default function App() {
     const cleanedArticles: Articolo[] = value.articoli.map((a, index) => ({
       ...a,
       id: a.id ?? Date.now() + index,
-      quantita: Number(a.quantita) || 0,
-      quantitaMinima: Number(a.quantitaMinima) || 0,
+      quantita: Math.max(0, Number(a.quantita) || 0),
+      quantitaMinima: Math.max(0, Number(a.quantitaMinima) || 0),
       um: a.um || "pz",
     }));
 
@@ -1057,10 +1062,11 @@ export default function App() {
                       <input
                         style={styles.input}
                         type="number"
+                        min="0"
                         value={articolo.quantita ?? 0}
                         readOnly={!editing}
                         onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                          updateArticleField(index, "quantita", Number(e.target.value) || 0)
+                          updateArticleField(index, "quantita", Math.max(0, Number(e.target.value) || 0))
                         }
                       />
                     </div>
@@ -1082,13 +1088,14 @@ export default function App() {
                       <input
                         style={styles.input}
                         type="number"
+                        min="0"
                         value={articolo.quantitaMinima ?? 0}
                         readOnly={!editing}
                         onChange={(e: ChangeEvent<HTMLInputElement>) =>
                           updateArticleField(
                             index,
                             "quantitaMinima",
-                            Number(e.target.value) || 0
+                            Math.max(0, Number(e.target.value) || 0)
                           )
                         }
                       />
