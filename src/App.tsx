@@ -17,6 +17,8 @@ import {
   Trash2,
   Settings,
   ArrowLeftRight,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -135,11 +137,11 @@ function getDrawerColors(item: Cassetto): { border: string; background: string }
 const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: "100vh",
-    background: "#f1f5f9",
+    background: "var(--page-bg)",
     padding: 24,
     fontFamily:
       'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    color: "#0f172a",
+    color: "var(--text-main)",
   },
   container: {
     maxWidth: 1400,
@@ -148,16 +150,16 @@ const styles: Record<string, CSSProperties> = {
     gap: 24,
   },
   card: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
+    background: "var(--surface-bg)",
+    border: "1px solid var(--surface-border)",
     borderRadius: 20,
     boxShadow: "0 2px 10px rgba(15, 23, 42, 0.06)",
   },
   button: {
     borderRadius: 12,
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#111827",
+    border: "1px solid var(--button-border)",
+    background: "var(--button-bg)",
+    color: "var(--button-fg)",
     padding: "10px 14px",
     fontWeight: 600,
     cursor: "pointer",
@@ -167,9 +169,9 @@ const styles: Record<string, CSSProperties> = {
   },
   buttonPrimary: {
     borderRadius: 12,
-    border: "1px solid #111827",
-    background: "#111827",
-    color: "#ffffff",
+    border: "1px solid var(--button-primary-border)",
+    background: "var(--button-primary-bg)",
+    color: "var(--button-primary-fg)",
     padding: "10px 14px",
     fontWeight: 600,
     cursor: "pointer",
@@ -181,25 +183,26 @@ const styles: Record<string, CSSProperties> = {
     width: "100%",
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid #d1d5db",
+    border: "1px solid var(--input-border)",
     fontSize: 14,
     boxSizing: "border-box",
-    background: "#ffffff",
+    background: "var(--input-bg)",
+    color: "var(--input-fg)",
   },
   label: {
     display: "block",
     marginBottom: 6,
     fontWeight: 600,
     fontSize: 14,
-    color: "#334155",
+    color: "var(--muted-text)",
   },
   badge: {
     fontSize: 12,
     padding: "4px 8px",
     borderRadius: 999,
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#334155",
+    border: "1px solid var(--badge-border)",
+    background: "var(--badge-bg)",
+    color: "var(--badge-fg)",
     display: "inline-flex",
     alignItems: "center",
   },
@@ -545,6 +548,60 @@ export default function App() {
   const [localApiPort, setLocalApiPort] = useState<string>("5285");
   const [pendingApiMode, setPendingApiMode] = useState<ApiMode>("render");
   const [pendingLocalApiPort, setPendingLocalApiPort] = useState<string>("5285");
+  const [themeMode, setThemeMode] = useState<"light" | "dark">(() => {
+    const saved = window.localStorage.getItem("themeMode");
+    return saved === "dark" ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem("themeMode", themeMode);
+  }, [themeMode]);
+
+  useEffect(() => {
+    document.body.style.backgroundColor = themeMode === "dark" ? "#0b1220" : "#f1f5f9";
+    document.body.style.color = themeMode === "dark" ? "#e2e8f0" : "#0f172a";
+  }, [themeMode]);
+
+  const isDark = themeMode === "dark";
+  const themeVars = (isDark
+    ? {
+        "--page-bg": "#0b1220",
+        "--text-main": "#e2e8f0",
+        "--surface-bg": "#111827",
+        "--surface-border": "#334155",
+        "--button-bg": "#1f2937",
+        "--button-fg": "#e2e8f0",
+        "--button-border": "#334155",
+        "--button-primary-bg": "#e2e8f0",
+        "--button-primary-fg": "#0f172a",
+        "--button-primary-border": "#e2e8f0",
+        "--input-bg": "#0f172a",
+        "--input-fg": "#e2e8f0",
+        "--input-border": "#334155",
+        "--muted-text": "#cbd5e1",
+        "--badge-bg": "#1f2937",
+        "--badge-fg": "#cbd5e1",
+        "--badge-border": "#334155",
+      }
+    : {
+        "--page-bg": "#f1f5f9",
+        "--text-main": "#0f172a",
+        "--surface-bg": "#ffffff",
+        "--surface-border": "#e2e8f0",
+        "--button-bg": "#ffffff",
+        "--button-fg": "#111827",
+        "--button-border": "#d1d5db",
+        "--button-primary-bg": "#111827",
+        "--button-primary-fg": "#ffffff",
+        "--button-primary-border": "#111827",
+        "--input-bg": "#ffffff",
+        "--input-fg": "#0f172a",
+        "--input-border": "#d1d5db",
+        "--muted-text": "#334155",
+        "--badge-bg": "#ffffff",
+        "--badge-fg": "#334155",
+        "--badge-border": "#d1d5db",
+      }) as CSSProperties;
 
   const renderApiUrl = "https://cassettiera.onrender.com/api";
   const localApiUrl = `http://localhost:${localApiPort || "5285"}/api`;
@@ -1015,7 +1072,13 @@ export default function App() {
   };
 
   return (
-    <div style={styles.page}>
+    <div
+      style={{
+        ...styles.page,
+        ...themeVars,
+        transition: "background-color 0.2s ease, color 0.2s ease",
+      }}
+    >
       <div style={styles.container}>
         <div
           style={{
@@ -1028,7 +1091,7 @@ export default function App() {
         >
           <div>
             <h1 style={{ margin: 0, fontSize: 36 }}>Magazzino ferramenta</h1>
-            <p style={{ margin: "8px 0 0", color: "#475569" }}>
+            <p style={{ margin: "8px 0 0", color: "var(--muted-text)" }}>
               Gestione locale di cassetti con ricerca per cassetto, articolo o codice a barre.
             </p>
             {loading && (
@@ -1079,6 +1142,13 @@ export default function App() {
             >
               <ArrowLeftRight size={16} />
               {swapMode ? "Annulla swap" : "Scambia cassetti"}
+            </BasicButton>
+
+            <BasicButton
+              onClick={() => setThemeMode((prev) => (prev === "light" ? "dark" : "light"))}
+            >
+              {isDark ? <Sun size={16} /> : <Moon size={16} />}
+              {isDark ? "Tema chiaro" : "Tema scuro"}
             </BasicButton>
 
 
