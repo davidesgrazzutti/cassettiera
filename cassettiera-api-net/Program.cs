@@ -14,8 +14,10 @@ var app = builder.Build();
 
 app.UseCors();
 
-string connString = "Host=localhost;Port=5432;Database=cassettiera;Username=postgres;Password=postgres";
-
+string connString =
+    builder.Configuration.GetConnectionString("Postgres")
+    ?? throw new InvalidOperationException("Connection string 'Postgres' mancante.");
+    
 // 🔹 GET ALL
 app.MapGet("/api/drawers", async () =>
 {
