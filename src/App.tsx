@@ -288,15 +288,32 @@ function StatCard({ title, value, icon: Icon, onClick }: StatCardProps) {
 type SettingsModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  drawerCount: number;
-  articleCount: number;
+  exportButtonEnabled: boolean;
+  onExportButtonEnabledChange: (value: boolean) => void;
+  swapButtonEnabled: boolean;
+  onSwapButtonEnabledChange: (value: boolean) => void;
+  themeButtonEnabled: boolean;
+  onThemeButtonEnabledChange: (value: boolean) => void;
   apiMode: ApiMode;
   onApiModeChange: (mode: ApiMode) => void;
   localApiPort: string;
   onLocalApiPortChange: (port: string) => void;
 };
 
-function SettingsModal({ isOpen, onClose, drawerCount, articleCount, apiMode, onApiModeChange, localApiPort, onLocalApiPortChange }: SettingsModalProps) {
+function SettingsModal({
+  isOpen,
+  onClose,
+  exportButtonEnabled,
+  onExportButtonEnabledChange,
+  swapButtonEnabled,
+  onSwapButtonEnabledChange,
+  themeButtonEnabled,
+  onThemeButtonEnabledChange,
+  apiMode,
+  onApiModeChange,
+  localApiPort,
+  onLocalApiPortChange,
+}: SettingsModalProps) {
   const [versionClickCount, setVersionClickCount] = useState<number>(0);
   const [apiMenuVisible, setApiMenuVisible] = useState<boolean>(false);
 
@@ -343,13 +360,59 @@ function SettingsModal({ isOpen, onClose, drawerCount, articleCount, apiMode, on
 
         <div style={{ display: "grid", gap: 16, marginBottom: 24 }}>
           <div style={{ ...styles.card, padding: 16 }}>
-            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>Cassetti totali</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: "#0f172a" }}>{drawerCount}</div>
-          </div>
+            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 10 }}>Pulsanti rapidi</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ color: "#0f172a", fontWeight: 600 }}>Scarica inventario</span>
+                <input
+                  type="checkbox"
+                  checked={exportButtonEnabled}
+                  onChange={(e) => onExportButtonEnabledChange(e.target.checked)}
+                />
+              </label>
 
-          <div style={{ ...styles.card, padding: 16 }}>
-            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>Articoli totali</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: "#0f172a" }}>{articleCount}</div>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ color: "#0f172a", fontWeight: 600 }}>Scambia cassetti</span>
+                <input
+                  type="checkbox"
+                  checked={swapButtonEnabled}
+                  onChange={(e) => onSwapButtonEnabledChange(e.target.checked)}
+                />
+              </label>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ color: "#0f172a", fontWeight: 600 }}>Tema chiaro/scuro</span>
+                <input
+                  type="checkbox"
+                  checked={themeButtonEnabled}
+                  onChange={(e) => onThemeButtonEnabledChange(e.target.checked)}
+                />
+              </label>
+            </div>
           </div>
 
           <div
@@ -548,6 +611,18 @@ export default function App() {
   const [localApiPort, setLocalApiPort] = useState<string>("5285");
   const [pendingApiMode, setPendingApiMode] = useState<ApiMode>("render");
   const [pendingLocalApiPort, setPendingLocalApiPort] = useState<string>("5285");
+  const [exportButtonEnabled, setExportButtonEnabled] = useState<boolean>(() => {
+    return window.localStorage.getItem("exportButtonEnabled") !== "false";
+  });
+  const [swapButtonEnabled, setSwapButtonEnabled] = useState<boolean>(() => {
+    return window.localStorage.getItem("swapButtonEnabled") !== "false";
+  });
+  const [themeButtonEnabled, setThemeButtonEnabled] = useState<boolean>(() => {
+    return window.localStorage.getItem("themeButtonEnabled") !== "false";
+  });
+  const [pendingExportButtonEnabled, setPendingExportButtonEnabled] = useState<boolean>(true);
+  const [pendingSwapButtonEnabled, setPendingSwapButtonEnabled] = useState<boolean>(true);
+  const [pendingThemeButtonEnabled, setPendingThemeButtonEnabled] = useState<boolean>(true);
   const [themeMode, setThemeMode] = useState<"light" | "dark">(() => {
     const saved = window.localStorage.getItem("themeMode");
     return saved === "dark" ? "dark" : "light";
@@ -556,6 +631,18 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem("themeMode", themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("exportButtonEnabled", String(exportButtonEnabled));
+  }, [exportButtonEnabled]);
+
+  useEffect(() => {
+    window.localStorage.setItem("swapButtonEnabled", String(swapButtonEnabled));
+  }, [swapButtonEnabled]);
+
+  useEffect(() => {
+    window.localStorage.setItem("themeButtonEnabled", String(themeButtonEnabled));
+  }, [themeButtonEnabled]);
 
   useEffect(() => {
     document.body.style.backgroundColor = themeMode === "dark" ? "#0b1220" : "#f1f5f9";
@@ -610,6 +697,9 @@ export default function App() {
   const openSettings = () => {
     setPendingApiMode(apiMode);
     setPendingLocalApiPort(localApiPort);
+    setPendingExportButtonEnabled(exportButtonEnabled);
+    setPendingSwapButtonEnabled(swapButtonEnabled);
+    setPendingThemeButtonEnabled(themeButtonEnabled);
     setShowSettings(true);
   };
 
@@ -619,6 +709,14 @@ export default function App() {
     setShowSettings(false);
     setApiMode(pendingApiMode);
     setLocalApiPort(pendingLocalApiPort || "5285");
+    setExportButtonEnabled(pendingExportButtonEnabled);
+    setSwapButtonEnabled(pendingSwapButtonEnabled);
+    setThemeButtonEnabled(pendingThemeButtonEnabled);
+
+    if (!pendingSwapButtonEnabled) {
+      setSwapMode(false);
+      setSwapSelection([]);
+    }
 
     const newLocalApiUrl = `http://localhost:${pendingLocalApiPort || "5285"}/api`;
     const newApiBaseUrl = pendingApiMode === "localhost" ? newLocalApiUrl : renderApiUrl;
@@ -1123,33 +1221,39 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <BasicButton onClick={exportInventoryPdf}>
-              <FileDown size={16} />
-              Scarica Inventario
-            </BasicButton>
+            {exportButtonEnabled && (
+              <BasicButton onClick={exportInventoryPdf}>
+                <FileDown size={16} />
+                Scarica Inventario
+              </BasicButton>
+            )}
 
-            <BasicButton
-              primary={swapMode}
-              onClick={() => {
-                if (swapMode) {
-                  setSwapMode(false);
-                  setSwapSelection([]);
-                } else {
-                  setSwapMode(true);
-                  setSwapSelection([]);
-                }
-              }}
-            >
-              <ArrowLeftRight size={16} />
-              {swapMode ? "Annulla swap" : "Scambia cassetti"}
-            </BasicButton>
+            {swapButtonEnabled && (
+              <BasicButton
+                primary={swapMode}
+                onClick={() => {
+                  if (swapMode) {
+                    setSwapMode(false);
+                    setSwapSelection([]);
+                  } else {
+                    setSwapMode(true);
+                    setSwapSelection([]);
+                  }
+                }}
+              >
+                <ArrowLeftRight size={16} />
+                {swapMode ? "Annulla swap" : "Scambia cassetti"}
+              </BasicButton>
+            )}
 
-            <BasicButton
-              onClick={() => setThemeMode((prev) => (prev === "light" ? "dark" : "light"))}
-            >
-              {isDark ? <Sun size={16} /> : <Moon size={16} />}
-              {isDark ? "Tema chiaro" : "Tema scuro"}
-            </BasicButton>
+            {themeButtonEnabled && (
+              <BasicButton
+                onClick={() => setThemeMode((prev) => (prev === "light" ? "dark" : "light"))}
+              >
+                {isDark ? <Sun size={16} /> : <Moon size={16} />}
+                {isDark ? "Tema chiaro" : "Tema scuro"}
+              </BasicButton>
+            )}
 
 
             <BasicButton onClick={openSettings}>
@@ -1778,8 +1882,12 @@ export default function App() {
       <SettingsModal
         isOpen={showSettings}
         onClose={closeSettings}
-        drawerCount={drawers.length}
-        articleCount={drawers.reduce((sum, d) => sum + d.articoli.length, 0)}
+        exportButtonEnabled={pendingExportButtonEnabled}
+        onExportButtonEnabledChange={setPendingExportButtonEnabled}
+        swapButtonEnabled={pendingSwapButtonEnabled}
+        onSwapButtonEnabledChange={setPendingSwapButtonEnabled}
+        themeButtonEnabled={pendingThemeButtonEnabled}
+        onThemeButtonEnabledChange={setPendingThemeButtonEnabled}
         apiMode={pendingApiMode}
         onApiModeChange={setPendingApiMode}
         localApiPort={pendingLocalApiPort}
