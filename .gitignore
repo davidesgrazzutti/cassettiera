@@ -23,6 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
-cassettiera-api
+# Backend API
+cassettiera-api-js/node_modules/
+
+cassettiera-api-net/node_modules/
+cassettiera-api-net/bin/
+cassettiera-api-net/obj/
+
 
 postgres test.sql

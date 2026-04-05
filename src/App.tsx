@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, CSSProperties, MouseEvent } from "react";
 import {
   Search,
@@ -35,6 +35,7 @@ type Articolo = {
 };
 
 type Cassetto = {
+  id?: number;
   cassetto: string;
   articoli: Articolo[];
   stato: StatoCassetto;
@@ -415,14 +416,6 @@ function SettingsModal({ isOpen, onClose, drawerCount, articleCount }: SettingsM
             <div style={{ fontSize: 16, fontWeight: 600, color: "#0f172a" }}>1.0.0</div>
           </div>
 
-          <div style={{ ...styles.card, padding: 16, background: "#f0fdf4", border: "1px solid #dcfce7" }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#166534", marginBottom: 6 }}>
-              Informazioni
-            </div>
-            <div style={{ fontSize: 13, color: "#15803d" }}>
-              I dati sono conservati localmente nel tuo browser. Non vengono sincronizzati su server esterni.
-            </div>
-          </div>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -546,6 +539,43 @@ export default function App() {
   });
   const [swapMode, setSwapMode] = useState<boolean>(false);
   const [swapSelection, setSwapSelection] = useState<Cassetto[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const apiBaseUrl = "/api";
+
+  const fetchJson = async <T,>(url: string, options?: RequestInit): Promise<T> => {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || response.statusText);
+    }
+    return response.json();
+  };
+
+  const loadDrawers = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await fetchJson<Cassetto[]>(`${apiBaseUrl}/drawers`);
+      setDrawers(data);
+    } catch (fetchError) {
+      console.error("Errore caricamento cassetti:", fetchError);
+      setError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : "Impossibile caricare i cassetti dal backend."
+      );
+      setDrawers(initialDrawers);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDrawers();
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -649,41 +679,32 @@ export default function App() {
     });
   };
 
-  const swapDrawers = (drawer1: Cassetto, drawer2: Cassetto) => {
-    // Scambia tutto tranne il codice del cassetto
-    const tempContent = {
-      articoli: [...drawer1.articoli],
-      stato: drawer1.stato,
-      ultimoAggiornamento: drawer1.ultimoAggiornamento,
-      note: drawer1.note,
-    };
+  const swapDrawers = async (drawer1: Cassetto, drawer2: Cassetto) => {
+    if (drawer1.id == null || drawer2.id == null) {
+      setError("Non è possibile scambiare cassetti senza ID");
+      return;
+    }
 
-    setDrawers((prev) =>
-      prev.map((d) => {
-        if (d.cassetto === drawer1.cassetto) {
-          return {
-            ...d,
-            articoli: [...drawer2.articoli],
-            stato: drawer2.stato,
-            ultimoAggiornamento: drawer2.ultimoAggiornamento,
-            note: drawer2.note,
-          };
-        }
-        if (d.cassetto === drawer2.cassetto) {
-          return {
-            ...d,
-            articoli: tempContent.articoli,
-            stato: tempContent.stato,
-            ultimoAggiornamento: tempContent.ultimoAggiornamento,
-            note: tempContent.note,
-          };
-        }
-        return d;
-      })
-    );
+    try {
+      await fetchJson(`${apiBaseUrl}/swap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id1: drawer1.id, id2: drawer2.id }),
+      });
+
+      // Ricarica i cassetti dal backend dopo lo scambio
+      await loadDrawers();
+    } catch (swapError) {
+      console.error("Errore scambio cassetti:", swapError);
+      setError(
+        swapError instanceof Error
+          ? swapError.message
+          : "Errore durante lo scambio dei cassetti."
+      );
+    }
   };
 
-  const handleSwapSelection = (drawer: Cassetto) => {
+  const handleSwapSelection = async (drawer: Cassetto) => {
     if (swapSelection.length === 0) {
       setSwapSelection([drawer]);
     } else if (swapSelection.length === 1) {
@@ -692,7 +713,7 @@ export default function App() {
         setSwapSelection([]);
       } else {
         // Scambia i due cassetti selezionati
-        swapDrawers(swapSelection[0], drawer);
+        await swapDrawers(swapSelection[0], drawer);
         setSwapSelection([]);
         setSwapMode(false);
       }
@@ -721,41 +742,106 @@ export default function App() {
     };
   };
 
-  const saveDrawer = () => {
-    if (!form) return;
-    const updated = normalizeDrawer(form);
-    setDrawers((prev) => prev.map((d) => (d.cassetto === updated.cassetto ? updated : d)));
-    setSelected(updated);
-    setForm(clone(updated));
-    setEditing(false);
+  const persistDrawer = async (drawer: Cassetto): Promise<Cassetto> => {
+    let nextDrawer = drawer;
+
+    if (nextDrawer.id == null) {
+      const response = await fetchJson<{
+        id: number;
+        codice: string;
+        stato: StatoCassetto;
+        note: string;
+        ultimo_aggiornamento: string;
+      }>(`${apiBaseUrl}/drawers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cassetto: nextDrawer.cassetto,
+          stato: nextDrawer.stato,
+          note: nextDrawer.note,
+        }),
+      });
+
+      nextDrawer = {
+        ...nextDrawer,
+        id: response.id,
+        cassetto: response.codice,
+        stato: response.stato,
+        note: response.note || "",
+        ultimoAggiornamento: response.ultimo_aggiornamento || nextDrawer.ultimoAggiornamento,
+      };
+    }
+
+    await fetchJson(`${apiBaseUrl}/drawers/${nextDrawer.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stato: nextDrawer.stato,
+        note: nextDrawer.note,
+        articoli: nextDrawer.articoli,
+      }),
+    });
+
+    return nextDrawer;
   };
 
-  const saveInventoryDrawer = () => {
+  const saveDrawer = async () => {
     if (!form) return;
 
     const updated = normalizeDrawer(form);
 
-    setDrawers((prev) => prev.map((d) => (d.cassetto === updated.cassetto ? updated : d)));
-    setCheckedDrawers((prev) => {
-      const next = new Set(prev);
-      next.add(updated.cassetto);
-      return next;
-    });
-    setSelected(updated);
-    setForm(clone(updated));
-
-    const nextIndex = inventoryIndex + 1;
-    if (nextIndex < drawers.length) {
-      const nextDrawer = drawers[nextIndex];
-      setInventoryIndex(nextIndex);
-      if (nextDrawer) {
-        setSelected(nextDrawer);
-        setForm(clone(nextDrawer));
-        setEditing(true);
-      }
-    } else {
+    try {
+      const saved = await persistDrawer(updated);
+      setDrawers((prev) => prev.map((d) => (d.cassetto === saved.cassetto ? saved : d)));
+      setSelected(saved);
+      setForm(clone(saved));
       setEditing(false);
-      setInventoryMode(false);
+    } catch (saveError) {
+      console.error("Errore salvataggio cassetto:", saveError);
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Errore durante il salvataggio del cassetto."
+      );
+    }
+  };
+
+  const saveInventoryDrawer = async () => {
+    if (!form) return;
+
+    const updated = normalizeDrawer(form);
+
+    try {
+      const saved = await persistDrawer(updated);
+      setDrawers((prev) => prev.map((d) => (d.cassetto === saved.cassetto ? saved : d)));
+      setCheckedDrawers((prev) => {
+        const next = new Set(prev);
+        next.add(saved.cassetto);
+        return next;
+      });
+      setSelected(saved);
+      setForm(clone(saved));
+
+      const nextIndex = inventoryIndex + 1;
+      if (nextIndex < drawers.length) {
+        const nextDrawer = drawers[nextIndex];
+        setInventoryIndex(nextIndex);
+        if (nextDrawer) {
+          setSelected(nextDrawer);
+          setForm(clone(nextDrawer));
+          setEditing(true);
+        }
+      } else {
+        setEditing(false);
+        setInventoryMode(false);
+      }
+    } catch (saveError) {
+      console.error("Errore salvataggio inventario:", saveError);
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Errore durante il salvataggio dell'inventario."
+      );
     }
   };
 
@@ -841,25 +927,63 @@ export default function App() {
     setEditing(false);
   };
 
-  const addDrawer = () => {
-    const maxNum = Math.max(...drawers.map(d => parseInt(d.cassetto.slice(1))));
+  const addDrawer = async () => {
+    const maxNum = Math.max(...drawers.map((d) => parseInt(d.cassetto.slice(1))));
     const newNum = maxNum + 1;
-    const newCode = `C${String(newNum).padStart(2, '0')}`;
-    const newDrawer: Cassetto = {
-      cassetto: newCode,
-      articoli: [],
-      stato: "Vuoto",
-      ultimoAggiornamento: new Date().toLocaleString("it-IT"),
-      note: "",
-    };
-    setDrawers([...drawers, newDrawer]);
+    const newCode = `C${String(newNum).padStart(2, "0")}`;
+
+    try {
+      const response = await fetchJson<{
+        id: number;
+        codice: string;
+        stato: StatoCassetto;
+        note: string;
+        ultimo_aggiornamento: string;
+      }>(`${apiBaseUrl}/drawers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cassetto: newCode, stato: "Vuoto", note: "" }),
+      });
+
+      const newDrawer: Cassetto = {
+        id: response.id,
+        cassetto: response.codice,
+        articoli: [],
+        stato: response.stato,
+        ultimoAggiornamento: response.ultimo_aggiornamento || new Date().toLocaleString("it-IT"),
+        note: response.note || "",
+      };
+
+      setDrawers((prev) => [...prev, newDrawer]);
+    } catch (createError) {
+      console.error("Errore creazione cassetto:", createError);
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Errore durante la creazione del cassetto."
+      );
+    }
   };
 
-  const deleteDrawer = () => {
+  const deleteDrawer = async () => {
     if (!selected) return;
-    if (window.confirm("Sei sicuro di voler eliminare questo cassetto?")) {
-      setDrawers(prev => prev.filter(d => d.cassetto !== selected.cassetto));
+    if (!window.confirm("Sei sicuro di voler eliminare questo cassetto?")) return;
+
+    try {
+      if (selected.id != null) {
+        await fetchJson(`${apiBaseUrl}/drawers/${selected.id}`, {
+          method: "DELETE",
+        });
+      }
+      setDrawers((prev) => prev.filter((d) => d.cassetto !== selected.cassetto));
       closeModal();
+    } catch (deleteError) {
+      console.error("Errore eliminazione cassetto:", deleteError);
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Errore durante l'eliminazione del cassetto."
+      );
     }
   };
 
@@ -880,6 +1004,32 @@ export default function App() {
             <p style={{ margin: "8px 0 0", color: "#475569" }}>
               Gestione locale di cassetti con ricerca per cassetto, articolo o codice a barre.
             </p>
+            {loading && (
+              <div
+                style={{
+                  ...styles.card,
+                  marginTop: 12,
+                  border: "1px solid #93c5fd",
+                  background: "#eff6ff",
+                  color: "#1d4ed8",
+                }}
+              >
+                Caricamento dati dal backend...
+              </div>
+            )}
+            {error && (
+              <div
+                style={{
+                  ...styles.card,
+                  marginTop: 12,
+                  border: "1px solid #fca5a5",
+                  background: "#fef2f2",
+                  color: "#991b1b",
+                }}
+              >
+                Errore backend: {error}
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
