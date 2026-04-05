@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, CSSProperties, MouseEvent } from "react";
 import {
   Search,
@@ -623,6 +623,8 @@ export default function App() {
   const [pendingExportButtonEnabled, setPendingExportButtonEnabled] = useState<boolean>(true);
   const [pendingSwapButtonEnabled, setPendingSwapButtonEnabled] = useState<boolean>(true);
   const [pendingThemeButtonEnabled, setPendingThemeButtonEnabled] = useState<boolean>(true);
+  const [isSearchFocused, setIsSearchFocused] = useState<boolean>(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [themeMode, setThemeMode] = useState<"light" | "dark">(() => {
     const saved = window.localStorage.getItem("themeMode");
     return saved === "dark" ? "dark" : "light";
@@ -1273,11 +1275,36 @@ export default function App() {
             >
               <Search size={16} color="#94a3b8" />
               <input
+                ref={searchInputRef}
                 style={{ ...styles.input, border: "none", padding: 0, outline: "none" }}
                 value={search}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                placeholder="Cerca cassetto, barcode, codice interno o articolo"
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
+                placeholder={isSearchFocused ? "" : "Cerca cassetto, barcode, codice interno o articolo"}
               />
+              {search.trim().length > 0 && (
+                <button
+                  type="button"
+                  aria-label="Cancella ricerca"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setSearch("");
+                    searchInputRef.current?.focus();
+                  }}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "#94a3b8",
+                    padding: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              )}
             </div>
           </div>
         </div>
