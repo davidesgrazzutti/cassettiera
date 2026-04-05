@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, CSSProperties, MouseEvent } from "react";
+import type { ChangeEvent, CSSProperties, FormEvent, MouseEvent } from "react";
 import {
   Search,
   Package,
@@ -589,7 +589,15 @@ function FilteredDrawersModal({ isOpen, onClose, title, drawers, onDrawerClick }
 }
 
 export default function App() {
+  const AUTH_TOKEN_STORAGE_KEY = "cassettiera_auth_token";
+
   const [drawers, setDrawers] = useState<Cassetto[]>(initialDrawers);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return Boolean(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY));
+  });
+  const [loginUsername, setLoginUsername] = useState<string>("");
+  const [loginPassword, setLoginPassword] = useState<string>("");
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>("");
   const [selected, setSelected] = useState<Cassetto | null>(null);
   const [editing, setEditing] = useState<boolean>(false);
@@ -758,8 +766,11 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     loadDrawers();
-  }, []);
+  }, [isAuthenticated]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1171,6 +1182,100 @@ export default function App() {
     }
   };
 
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    try {
+      const response = await fetchJson<{ token: string }>(`${apiBaseUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: loginUsername,
+          password: loginPassword,
+        }),
+      });
+
+      window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, response.token);
+      setIsAuthenticated(true);
+      setLoginError(null);
+    } catch (loginFetchError) {
+      setLoginError(
+        loginFetchError instanceof Error
+          ? loginFetchError.message
+          : "Credenziali non valide."
+      );
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setLoginUsername("");
+    setLoginPassword("");
+    setLoginError(null);
+    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div
+        style={{
+          ...styles.page,
+          ...themeVars,
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <div style={{ ...styles.card, width: "min(420px, 92vw)", padding: 24 }}>
+          <h1 style={{ margin: "0 0 10px", fontSize: 28 }}>Accesso</h1>
+          <p style={{ margin: "0 0 20px", color: "var(--muted-text)", fontSize: 14 }}>
+            Inserisci le credenziali per entrare in magazzino.
+          </p>
+
+          <form onSubmit={handleLogin} style={{ display: "grid", gap: 14 }}>
+            <div>
+              <label style={styles.label}>Username</label>
+              <input
+                style={styles.input}
+                value={loginUsername}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setLoginUsername(e.target.value)}
+                placeholder="Username"
+                autoComplete="username"
+              />
+            </div>
+
+            <div>
+              <label style={styles.label}>Password</label>
+              <input
+                style={styles.input}
+                type="password"
+                value={loginPassword}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setLoginPassword(e.target.value)}
+                placeholder="Password"
+                autoComplete="current-password"
+              />
+            </div>
+
+            {loginError && <div style={{ color: "#b91c1c", fontSize: 13 }}>{loginError}</div>}
+
+            <button
+              type="submit"
+              style={{
+                ...styles.buttonPrimary,
+                justifyContent: "center",
+              }}
+            >
+              Accedi
+            </button>
+          </form>
+
+          <div style={{ marginTop: 14, fontSize: 12, color: "var(--muted-text)" }}>
+            Login collegato al backend Render/Postgres.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -1262,6 +1367,8 @@ export default function App() {
               <Settings size={16} />
               Impostazioni
             </BasicButton>
+
+            <BasicButton onClick={handleLogout}>Esci</BasicButton>
 
             <div
               style={{

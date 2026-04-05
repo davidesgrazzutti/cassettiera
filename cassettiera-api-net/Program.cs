@@ -1,5 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +26,9 @@ string rawConnString =
 
 
 string connString = rawConnString;
+string jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET")
+    ?? builder.Configuration["Jwt:Secret"]
+    ?? "change-me-in-render";
 
 // 🔹 Conversione automatica se formato URL postgres://
 if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
@@ -101,6 +108,68 @@ app.MapGet("/api/drawers", async () =>
     }
 
     return Results.Ok(result);
+});
+
+// 🔹 AUTH LOGIN
+app.MapPost("/api/auth/login", async (LoginInput body) =>
+{
+    var username = (body.Username ?? string.Empty).Trim();
+    var password = body.Password ?? string.Empty;
+
+    if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        return Results.BadRequest(new { error = "Username e password sono obbligatori" });
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+
+    await using var cmd = new NpgsqlCommand("""
+        SELECT id, username, password_hash, is_active
+        FROM users
+        WHERE LOWER(username) = LOWER(@username)
+        LIMIT 1
+    """, conn);
+
+    cmd.Parameters.AddWithValue("username", username);
+    await using var reader = await cmd.ExecuteReaderAsync();
+
+    if (!await reader.ReadAsync())
+        return Results.Unauthorized();
+
+    var userId = reader.GetInt32(reader.GetOrdinal("id"));
+    var dbUsername = reader.GetString(reader.GetOrdinal("username"));
+    var passwordHash = reader.GetString(reader.GetOrdinal("password_hash"));
+    var isActive = reader.GetBoolean(reader.GetOrdinal("is_active"));
+
+    if (!isActive)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var isPasswordValid = BCrypt.Net.BCrypt.Verify(password, passwordHash);
+    if (!isPasswordValid)
+        return Results.Unauthorized();
+
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
+    var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var tokenDescriptor = new JwtSecurityToken(
+        claims: new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new Claim(JwtRegisteredClaimNames.UniqueName, dbUsername)
+        },
+        expires: DateTime.UtcNow.AddHours(12),
+        signingCredentials: credentials
+    );
+
+    var token = new JwtSecurityTokenHandler().WriteToken(tokenDescriptor);
+
+    return Results.Ok(new
+    {
+        token,
+        user = new
+        {
+            id = userId,
+            username = dbUsername
+        }
+    });
 });
 
 // 🔹 GET BY ID
@@ -498,4 +567,13 @@ public class SwapInput
     
     [JsonPropertyName("id2")]
     public int Id2 { get; set; }
+}
+
+public class LoginInput
+{
+    [JsonPropertyName("username")]
+    public string? Username { get; set; }
+
+    [JsonPropertyName("password")]
+    public string? Password { get; set; }
 }

@@ -40,7 +40,6 @@ https://cassettiera.vercel.app
 
 ### Backend
 - ASP.NET Core  
-- Node.js + Express  
 
 ### Database
 - PostgreSQL  
@@ -81,11 +80,6 @@ npm run dev
 cd cassettiera-api-net  
 dotnet run  
 
-### Backend Node.js
-cd cassettiera-api-js  
-npm install  
-npm start  
-
 ---
 
 ## 🗄️ Database
@@ -117,7 +111,6 @@ DATABASE_URL=postgres://user:password@host:port/db
 
 ## 📈 Roadmap
 
-- Toogle impostazioni per abilitare/disabilitare scambia cassetti e tema dark
 - Login + JWT  
 - Lettura e caricamento da pistola ( toggle lettura pistola nelle impostazioni)
 - Storico movimenti  
