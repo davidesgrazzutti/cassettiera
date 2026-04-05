@@ -115,9 +115,9 @@ DATABASE_URL=postgres://user:password@host:port/db
 ## 📈 Roadmap
 
 - Login + JWT  
+- Lettura e caricamento da pistola ( toggle lettura pistola nelle impostazioni)
 - Storico movimenti  
 - Analytics avanzate  
-- Scanner barcode mobile  
 - Backup cloud  
 
 ---

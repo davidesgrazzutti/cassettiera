@@ -62,106 +62,28 @@ const initialDrawers: Cassetto[] = Array.from({ length: 80 }, (_, i) => {
       articoli: [
         {
           id: 1,
-          codiceBarre: "8051234567890",
-          codiceInterno: "ART-001",
-          articolo: "Viti M4 x 20 zincate",
+          codiceBarre: "Demo",
+          codiceInterno: "Demo-Demo",
+          articolo: "Demo",
           quantita: 120,
           um: "pz",
           quantitaMinima: 30,
-          note: "Confezione aperta",
+          note: "Demo",
         },
         {
           id: 2,
-          codiceBarre: "8051234567893",
-          codiceInterno: "ART-004",
-          articolo: "Dadi M4",
+          codiceBarre: "Demo",
+          codiceInterno: "Demo-Demo",
+          articolo: "Demo",
           quantita: 80,
           um: "pz",
           quantitaMinima: 20,
-          note: "",
+          note: "Demo",
         },
       ],
       stato: "Occupato",
       ultimoAggiornamento: "2026-04-02 10:30",
-      note: "Materiale piccolo misto",
-    },
-    C02: {
-      cassetto: "C02",
-      articoli: [
-        {
-          id: 1,
-          codiceBarre: "8051234567891",
-          codiceInterno: "ART-002",
-          articolo: "Bulloni M6",
-          quantita: 45,
-          um: "pz",
-          quantitaMinima: 20,
-          note: "",
-        },
-      ],
-      stato: "Occupato",
-      ultimoAggiornamento: "2026-04-02 10:31",
-      note: "",
-    },
-    C03: {
-      cassetto: "C03",
-      articoli: [
-        {
-          id: 1,
-          codiceBarre: "8051234567892",
-          codiceInterno: "ART-003",
-          articolo: "Rondelle 6 mm",
-          quantita: 5,
-          um: "pz",
-          quantitaMinima: 25,
-          note: "Da riordinare",
-        },
-        {
-          id: 2,
-          codiceBarre: "8051234567894",
-          codiceInterno: "ART-005",
-          articolo: "Rondelle 8 mm",
-          quantita: 12,
-          um: "pz",
-          quantitaMinima: 20,
-          note: "",
-        },
-      ],
-      stato: "Occupato",
-      ultimoAggiornamento: "2026-04-02 10:32",
-      note: "",
-    },
-    C04: {
-      cassetto: "C04",
-      articoli: [],
-      stato: "Vuoto",
-      ultimoAggiornamento: "2026-04-02 10:33",
-      note: "",
-    },
-    C05: {
-      cassetto: "C05",
-      articoli: [
-        {
-          id: 1,
-          codiceBarre: "8051234567805",
-          codiceInterno: "ART-010",
-          articolo: "Tasselli 8 mm",
-          quantita: 65,
-          um: "pz",
-          quantitaMinima: 15,
-          note: "",
-        },
-      ],
-      stato: "Occupato",
-      ultimoAggiornamento: "2026-04-02 10:34",
-      note: "",
-    },
-    C06: {
-      cassetto: "C06",
-      articoli: [],
-      stato: "Disattivato",
-      ultimoAggiornamento: "2026-04-02 10:35",
-      note: "Cassetto rotto",
+      note: "Demo",
     },
   };
 
@@ -1143,11 +1065,6 @@ export default function App() {
               Scarica Inventario
             </BasicButton>
 
-            <BasicButton onClick={openSettings}>
-              <Settings size={16} />
-              Impostazioni
-            </BasicButton>
-
             <BasicButton
               primary={swapMode}
               onClick={() => {
@@ -1162,6 +1079,12 @@ export default function App() {
             >
               <ArrowLeftRight size={16} />
               {swapMode ? "Annulla swap" : "Scambia cassetti"}
+            </BasicButton>
+
+
+            <BasicButton onClick={openSettings}>
+              <Settings size={16} />
+              Impostazioni
             </BasicButton>
 
             <div
