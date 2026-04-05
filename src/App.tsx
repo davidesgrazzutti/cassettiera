@@ -50,6 +50,8 @@ type DrawerSummary = {
   tuttiZero: boolean;
 };
 
+type ApiMode = "render" | "localhost";
+
 const initialDrawers: Cassetto[] = Array.from({ length: 80 }, (_, i) => {
   const index = i + 1;
   const code = `C${String(index).padStart(2, "0")}`;
@@ -363,9 +365,23 @@ type SettingsModalProps = {
   onClose: () => void;
   drawerCount: number;
   articleCount: number;
+  apiMode: ApiMode;
+  onApiModeChange: (mode: ApiMode) => void;
+  localApiPort: string;
+  onLocalApiPortChange: (port: string) => void;
 };
 
-function SettingsModal({ isOpen, onClose, drawerCount, articleCount }: SettingsModalProps) {
+function SettingsModal({ isOpen, onClose, drawerCount, articleCount, apiMode, onApiModeChange, localApiPort, onLocalApiPortChange }: SettingsModalProps) {
+  const [versionClickCount, setVersionClickCount] = useState<number>(0);
+  const [apiMenuVisible, setApiMenuVisible] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setVersionClickCount(0);
+      setApiMenuVisible(false);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -411,10 +427,72 @@ function SettingsModal({ isOpen, onClose, drawerCount, articleCount }: SettingsM
             <div style={{ fontSize: 28, fontWeight: 700, color: "#0f172a" }}>{articleCount}</div>
           </div>
 
-          <div style={{ ...styles.card, padding: 16 }}>
+          <div
+            style={{ ...styles.card, padding: 16, cursor: "pointer" }}
+            onClick={() => {
+              const next = versionClickCount + 1;
+              setVersionClickCount(next);
+              if (next >= 5) {
+                setApiMenuVisible(true);
+              }
+            }}
+          >
             <div style={{ fontSize: 14, color: "#64748b", marginBottom: 8 }}>Versione</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: "#0f172a" }}>1.0.0</div>
+            {!apiMenuVisible && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#94a3b8" }}>
+              </div>
+            )}
           </div>
+
+          {apiMenuVisible && (
+            <div style={{ ...styles.card, padding: 16 }}>
+              <div style={{ fontSize: 14, color: "#64748b", marginBottom: 8 }}>API da usare</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="apiMode"
+                    checked={apiMode === "render"}
+                    onChange={() => onApiModeChange("render")}
+                  />
+                  Usa Render
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="apiMode"
+                    checked={apiMode === "localhost"}
+                    onChange={() => onApiModeChange("localhost")}
+                  />
+                  Usa localhost
+                </label>
+                {apiMode === "localhost" && (
+                  <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                    <label style={{ display: "grid", gap: 6, fontSize: 13, color: "#475569" }}>
+                      Porta localhost
+                      <input
+                        type="number"
+                        min="1"
+                        max="65535"
+                        value={localApiPort}
+                        onChange={(e) => onLocalApiPortChange(e.target.value)}
+                        style={{
+                          ...styles.input,
+                          width: "100%",
+                          maxWidth: 160,
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      L’URL locale sarà http://localhost:{localApiPort}/api
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
         </div>
 
@@ -541,8 +619,35 @@ export default function App() {
   const [swapSelection, setSwapSelection] = useState<Cassetto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [apiMode, setApiMode] = useState<ApiMode>("render");
+  const [localApiPort, setLocalApiPort] = useState<string>("5285");
+  const [pendingApiMode, setPendingApiMode] = useState<ApiMode>("render");
+  const [pendingLocalApiPort, setPendingLocalApiPort] = useState<string>("5285");
 
-const apiBaseUrl = "https://cassettiera.onrender.com/api";
+  const renderApiUrl = "https://cassettiera.onrender.com/api";
+  const localApiUrl = `http://localhost:${localApiPort || "5285"}/api`;
+  const apiBaseUrl = apiMode === "localhost" ? localApiUrl : renderApiUrl;
+
+  const openSettings = () => {
+    setPendingApiMode(apiMode);
+    setPendingLocalApiPort(localApiPort);
+    setShowSettings(true);
+  };
+
+  const closeSettings = () => {
+    const oldApiBaseUrl = apiBaseUrl;
+
+    setShowSettings(false);
+    setApiMode(pendingApiMode);
+    setLocalApiPort(pendingLocalApiPort || "5285");
+
+    const newLocalApiUrl = `http://localhost:${pendingLocalApiPort || "5285"}/api`;
+    const newApiBaseUrl = pendingApiMode === "localhost" ? newLocalApiUrl : renderApiUrl;
+
+    if (newApiBaseUrl !== oldApiBaseUrl) {
+      loadDrawers(newApiBaseUrl);
+    }
+  };
 
   const fetchJson = async <T,>(url: string, options?: RequestInit): Promise<T> => {
     const response = await fetch(url, options);
@@ -553,12 +658,12 @@ const apiBaseUrl = "https://cassettiera.onrender.com/api";
     return response.json();
   };
 
-  const loadDrawers = async () => {
+  const loadDrawers = async (baseUrl = apiBaseUrl) => {
     setLoading(true);
     setError(null);
 
     try {
-      const data = await fetchJson<Cassetto[]>(`${apiBaseUrl}/drawers`);
+      const data = await fetchJson<Cassetto[]>(`${baseUrl}/drawers`);
       setDrawers(data);
     } catch (fetchError) {
       console.error("Errore caricamento cassetti:", fetchError);
@@ -1038,7 +1143,7 @@ const apiBaseUrl = "https://cassettiera.onrender.com/api";
               Scarica Inventario
             </BasicButton>
 
-            <BasicButton onClick={() => setShowSettings(true)}>
+            <BasicButton onClick={openSettings}>
               <Settings size={16} />
               Impostazioni
             </BasicButton>
@@ -1679,9 +1784,13 @@ const apiBaseUrl = "https://cassettiera.onrender.com/api";
 
       <SettingsModal
         isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
+        onClose={closeSettings}
         drawerCount={drawers.length}
         articleCount={drawers.reduce((sum, d) => sum + d.articoli.length, 0)}
+        apiMode={pendingApiMode}
+        onApiModeChange={setPendingApiMode}
+        localApiPort={pendingLocalApiPort}
+        onLocalApiPortChange={setPendingLocalApiPort}
       />
 
       <FilteredDrawersModal
