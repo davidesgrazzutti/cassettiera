@@ -15,6 +15,7 @@ import {
   FileDown,
   Plus,
   Trash2,
+  Settings,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -47,7 +48,7 @@ type DrawerSummary = {
   tuttiZero: boolean;
 };
 
-const initialDrawers: Cassetto[] = Array.from({ length: 81 }, (_, i) => {
+const initialDrawers: Cassetto[] = Array.from({ length: 80 }, (_, i) => {
   const index = i + 1;
   const code = `C${String(index).padStart(2, "0")}`;
 
@@ -306,11 +307,34 @@ type StatCardProps = {
   title: string;
   value: number;
   icon: React.ComponentType<{ size?: number; color?: string }>;
+  onClick?: () => void;
 };
 
-function StatCard({ title, value, icon: Icon }: StatCardProps) {
+function StatCard({ title, value, icon: Icon, onClick }: StatCardProps) {
   return (
-    <div style={{ ...styles.card, padding: 16, display: "flex", justifyContent: "space-between" }}>
+    <div
+      onClick={onClick}
+      style={{
+        ...styles.card,
+        padding: 16,
+        display: "flex",
+        justifyContent: "space-between",
+        cursor: onClick ? "pointer" : "default",
+        transition: onClick ? "all 0.2s ease" : "none",
+      }}
+      onMouseEnter={(e) => {
+        if (onClick) {
+          (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 20px rgba(15, 23, 42, 0.15)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (onClick) {
+          (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 10px rgba(15, 23, 42, 0.06)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+        }
+      }}
+    >
       <div>
         <div style={{ color: "#64748b", fontSize: 14 }}>{title}</div>
         <div style={{ fontSize: 30, fontWeight: 700 }}>{value}</div>
@@ -332,6 +356,178 @@ function StatCard({ title, value, icon: Icon }: StatCardProps) {
   );
 }
 
+type SettingsModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  drawerCount: number;
+  articleCount: number;
+};
+
+function SettingsModal({ isOpen, onClose, drawerCount, articleCount }: SettingsModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.5)",
+        display: "grid",
+        placeItems: "center",
+        padding: 20,
+        zIndex: 999,
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+        style={{
+          background: "white",
+          width: "min(500px, 90vw)",
+          borderRadius: 20,
+          padding: 24,
+          boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          <Settings size={24} />
+          <h2 style={{ margin: 0 }}>Impostazioni</h2>
+        </div>
+
+        <div style={{ display: "grid", gap: 16, marginBottom: 24 }}>
+          <div style={{ ...styles.card, padding: 16 }}>
+            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>Cassetti totali</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: "#0f172a" }}>{drawerCount}</div>
+          </div>
+
+          <div style={{ ...styles.card, padding: 16 }}>
+            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 4 }}>Articoli totali</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: "#0f172a" }}>{articleCount}</div>
+          </div>
+
+          <div style={{ ...styles.card, padding: 16 }}>
+            <div style={{ fontSize: 14, color: "#64748b", marginBottom: 8 }}>Versione</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#0f172a" }}>1.0.0</div>
+          </div>
+
+          <div style={{ ...styles.card, padding: 16, background: "#f0fdf4", border: "1px solid #dcfce7" }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#166534", marginBottom: 6 }}>
+              Informazioni
+            </div>
+            <div style={{ fontSize: 13, color: "#15803d" }}>
+              I dati sono conservati localmente nel tuo browser. Non vengono sincronizzati su server esterni.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <BasicButton onClick={onClose}>Chiudi</BasicButton>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+type FilteredDrawersModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  drawers: Cassetto[];
+  onDrawerClick: (drawer: Cassetto) => void;
+};
+
+function FilteredDrawersModal({ isOpen, onClose, title, drawers, onDrawerClick }: FilteredDrawersModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.5)",
+        display: "grid",
+        placeItems: "center",
+        padding: 20,
+        zIndex: 999,
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+        style={{
+          background: "white",
+          width: "min(700px, 90vw)",
+          maxHeight: "80vh",
+          borderRadius: 20,
+          padding: 24,
+          boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+          overflow: "auto",
+        }}
+      >
+        <h2 style={{ margin: "0 0 20px 0" }}>{title}</h2>
+
+        {drawers.length === 0 ? (
+          <div style={{ ...styles.card, padding: 20, textAlign: "center", color: "#64748b" }}>
+            Nessun cassetto trovato
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+              gap: 12,
+              marginBottom: 20,
+            }}
+          >
+            {drawers.map((drawer) => {
+              const summary = getDrawerSummary(drawer);
+              const colors = getDrawerColors(drawer);
+
+              return (
+                <motion.button
+                  key={drawer.cassetto}
+                  onClick={() => onDrawerClick(drawer)}
+                  style={{
+                    borderRadius: 18,
+                    border: `1px solid ${colors.border}`,
+                    background: colors.background,
+                    padding: 14,
+                    textAlign: "left",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>{drawer.cassetto}</div>
+                  <div style={{ fontSize: 12, color: "#475569", marginBottom: 8 }}>
+                    {drawer.articoli.length > 0
+                      ? drawer.articoli.map((a) => a.articolo || "Articolo senza nome").join(", ")
+                      : "Cassetto vuoto"}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                    Art: {summary.countArticoli} | Qtà: {summary.quantitaTotale}
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <BasicButton onClick={onClose}>Chiudi</BasicButton>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function App() {
   const [drawers, setDrawers] = useState<Cassetto[]>(initialDrawers);
   const [search, setSearch] = useState<string>("");
@@ -341,6 +537,12 @@ export default function App() {
   const [inventoryMode, setInventoryMode] = useState<boolean>(false);
   const [inventoryIndex, setInventoryIndex] = useState<number>(0);
   const [checkedDrawers, setCheckedDrawers] = useState<Set<string>>(() => new Set<string>());
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [filterModal, setFilterModal] = useState<{ isOpen: boolean; type: string; title: string }>({
+    isOpen: false,
+    type: "",
+    title: "",
+  });
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -586,6 +788,28 @@ export default function App() {
     setEditing(false);
   };
 
+  const addDrawer = () => {
+    const maxNum = Math.max(...drawers.map(d => parseInt(d.cassetto.slice(1))));
+    const newNum = maxNum + 1;
+    const newCode = `C${String(newNum).padStart(2, '0')}`;
+    const newDrawer: Cassetto = {
+      cassetto: newCode,
+      articoli: [],
+      stato: "Vuoto",
+      ultimoAggiornamento: new Date().toLocaleString("it-IT"),
+      note: "",
+    };
+    setDrawers([...drawers, newDrawer]);
+  };
+
+  const deleteDrawer = () => {
+    if (!selected) return;
+    if (window.confirm("Sei sicuro di voler eliminare questo cassetto?")) {
+      setDrawers(prev => prev.filter(d => d.cassetto !== selected.cassetto));
+      closeModal();
+    }
+  };
+
   return (
     <div style={styles.page}>
       <div style={styles.container}>
@@ -601,30 +825,19 @@ export default function App() {
           <div>
             <h1 style={{ margin: 0, fontSize: 36 }}>Magazzino ferramenta</h1>
             <p style={{ margin: "8px 0 0", color: "#475569" }}>
-              Gestione locale di 81 cassetti con ricerca per cassetto, articolo o codice a barre.
+              Gestione locale di cassetti con ricerca per cassetto, articolo o codice a barre.
             </p>
           </div>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <BasicButton
-              primary={inventoryMode}
-              onClick={() => {
-                if (!inventoryMode) {
-                  setInventoryMode(true);
-                  openInventoryDrawer(0);
-                } else {
-                  setInventoryMode(false);
-                  setEditing(false);
-                }
-              }}
-            >
-              <ClipboardList size={16} />
-              {inventoryMode ? "Esci da inventario" : "Modalità inventario"}
-            </BasicButton>
-
             <BasicButton onClick={exportInventoryPdf}>
               <FileDown size={16} />
-              Scarica PDF
+              Scarica Inventario
+            </BasicButton>
+
+            <BasicButton onClick={() => setShowSettings(true)}>
+              <Settings size={16} />
+              Impostazioni
             </BasicButton>
 
             <div
@@ -700,9 +913,42 @@ export default function App() {
           }}
         >
           <StatCard title="Cassetti totali" value={stats.totale} icon={Boxes} />
-          <StatCard title="Occupati" value={stats.occupati} icon={Package} />
-          <StatCard title="Vuoti" value={stats.vuoti} icon={X} />
-          <StatCard title="Sotto scorta" value={stats.sottoScorta} icon={Barcode} />
+          <StatCard
+            title="Occupati"
+            value={stats.occupati}
+            icon={Package}
+            onClick={() => {
+              setFilterModal({
+                isOpen: true,
+                type: "occupati",
+                title: "Cassetti Occupati",
+              });
+            }}
+          />
+          <StatCard
+            title="Vuoti"
+            value={stats.vuoti}
+            icon={X}
+            onClick={() => {
+              setFilterModal({
+                isOpen: true,
+                type: "vuoti",
+                title: "Cassetti Vuoti",
+              });
+            }}
+          />
+          <StatCard
+            title="Sotto scorta"
+            value={stats.sottoScorta}
+            icon={Barcode}
+            onClick={() => {
+              setFilterModal({
+                isOpen: true,
+                type: "sottoScorta",
+                title: "Cassetti Sotto Scorta",
+              });
+            }}
+          />
           <StatCard title="Articoli totali" value={stats.articoliTotali} icon={Package} />
         </div>
 
@@ -771,6 +1017,26 @@ export default function App() {
                 </motion.button>
               );
             })}
+            <motion.button
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, delay: filtered.length * 0.005 }}
+              onClick={addDrawer}
+              style={{
+                borderRadius: 18,
+                border: `1px solid #cbd5e1`,
+                background: "#f8fafc",
+                padding: 14,
+                textAlign: "center",
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Plus size={24} color="#334155" />
+            </motion.button>
           </div>
         </div>
 
@@ -788,7 +1054,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 20).map((item) => {
+              {filtered.slice(0, 80).map((item) => {
                 const summary = getDrawerSummary(item);
                 return (
                   <tr
@@ -882,10 +1148,16 @@ export default function App() {
                     </BasicButton>
                   </>
                 ) : !editing ? (
-                  <BasicButton onClick={() => setEditing(true)}>
-                    <Pencil size={16} />
-                    Modifica
-                  </BasicButton>
+                  <>
+                    <BasicButton onClick={() => setEditing(true)}>
+                      <Pencil size={16} />
+                      Modifica
+                    </BasicButton>
+                    <BasicButton onClick={deleteDrawer}>
+                      <Trash2 size={16} />
+                      Elimina
+                    </BasicButton>
+                  </>
                 ) : (
                   <>
                     <BasicButton
@@ -1123,6 +1395,32 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        drawerCount={drawers.length}
+        articleCount={drawers.reduce((sum, d) => sum + d.articoli.length, 0)}
+      />
+
+      <FilteredDrawersModal
+        isOpen={filterModal.isOpen}
+        onClose={() => setFilterModal({ ...filterModal, isOpen: false })}
+        title={filterModal.title}
+        drawers={
+          filterModal.type === "occupati"
+            ? drawers.filter((d) => d.stato === "Occupato")
+            : filterModal.type === "vuoti"
+            ? drawers.filter((d) => d.stato === "Vuoto")
+            : filterModal.type === "sottoScorta"
+            ? drawers.filter((d) => getDrawerSummary(d).sottoScorta)
+            : []
+        }
+        onDrawerClick={(drawer) => {
+          openDrawer(drawer);
+          setFilterModal({ ...filterModal, isOpen: false });
+        }}
+      />
     </div>
   );
 }
