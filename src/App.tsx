@@ -542,7 +542,7 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const apiBaseUrl = "/api";
+const apiBaseUrl = "https://cassettiera.onrender.com/api";
 
   const fetchJson = async <T,>(url: string, options?: RequestInit): Promise<T> => {
     const response = await fetch(url, options);
