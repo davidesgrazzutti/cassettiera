@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   Settings,
+  ArrowLeftRight,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -543,6 +544,8 @@ export default function App() {
     type: "",
     title: "",
   });
+  const [swapMode, setSwapMode] = useState<boolean>(false);
+  const [swapSelection, setSwapSelection] = useState<Cassetto[]>([]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -644,6 +647,56 @@ export default function App() {
             : "Occupato",
       };
     });
+  };
+
+  const swapDrawers = (drawer1: Cassetto, drawer2: Cassetto) => {
+    // Scambia tutto tranne il codice del cassetto
+    const tempContent = {
+      articoli: [...drawer1.articoli],
+      stato: drawer1.stato,
+      ultimoAggiornamento: drawer1.ultimoAggiornamento,
+      note: drawer1.note,
+    };
+
+    setDrawers((prev) =>
+      prev.map((d) => {
+        if (d.cassetto === drawer1.cassetto) {
+          return {
+            ...d,
+            articoli: [...drawer2.articoli],
+            stato: drawer2.stato,
+            ultimoAggiornamento: drawer2.ultimoAggiornamento,
+            note: drawer2.note,
+          };
+        }
+        if (d.cassetto === drawer2.cassetto) {
+          return {
+            ...d,
+            articoli: tempContent.articoli,
+            stato: tempContent.stato,
+            ultimoAggiornamento: tempContent.ultimoAggiornamento,
+            note: tempContent.note,
+          };
+        }
+        return d;
+      })
+    );
+  };
+
+  const handleSwapSelection = (drawer: Cassetto) => {
+    if (swapSelection.length === 0) {
+      setSwapSelection([drawer]);
+    } else if (swapSelection.length === 1) {
+      if (swapSelection[0].cassetto === drawer.cassetto) {
+        // Deseleziona se clicchi sullo stesso
+        setSwapSelection([]);
+      } else {
+        // Scambia i due cassetti selezionati
+        swapDrawers(swapSelection[0], drawer);
+        setSwapSelection([]);
+        setSwapMode(false);
+      }
+    }
   };
 
   const normalizeDrawer = (value: Cassetto): Cassetto => {
@@ -840,6 +893,22 @@ export default function App() {
               Impostazioni
             </BasicButton>
 
+            <BasicButton
+              primary={swapMode}
+              onClick={() => {
+                if (swapMode) {
+                  setSwapMode(false);
+                  setSwapSelection([]);
+                } else {
+                  setSwapMode(true);
+                  setSwapSelection([]);
+                }
+              }}
+            >
+              <ArrowLeftRight size={16} />
+              {swapMode ? "Annulla swap" : "Scambia cassetti"}
+            </BasicButton>
+
             <div
               style={{
                 ...styles.card,
@@ -902,6 +971,44 @@ export default function App() {
                 <ChevronRight size={16} />
               </BasicButton>
             </div>
+          </div>
+        )}
+
+        {swapMode && (
+          <div
+            style={{
+              ...styles.card,
+              border: "1px solid #f59e0b",
+              background: "#fef3c7",
+              padding: 16,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700 }}>
+                <ArrowLeftRight size={18} />
+                Modalità scambio cassetti
+              </div>
+              <div style={{ color: "#92400e", marginTop: 6 }}>
+                {swapSelection.length === 0
+                  ? "Clicca su un cassetto per selezionarlo"
+                  : swapSelection.length === 1
+                  ? `Cassetto selezionato: ${swapSelection[0].cassetto}. Clicca su un secondo cassetto per scambiarli.`
+                  : "Scambio completato!"
+                }
+              </div>
+            </div>
+
+            <BasicButton onClick={() => {
+              setSwapMode(false);
+              setSwapSelection([]);
+            }}>
+              Annulla
+            </BasicButton>
           </div>
         )}
 
@@ -971,11 +1078,23 @@ export default function App() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.18, delay: index * 0.005 }}
-                  onClick={() => openDrawer(item)}
+                  onClick={() => {
+                    if (swapMode) {
+                      handleSwapSelection(item);
+                    } else {
+                      openDrawer(item);
+                    }
+                  }}
                   style={{
                     borderRadius: 18,
-                    border: `1px solid ${colors.border}`,
-                    background: colors.background,
+                    border: `2px solid ${
+                      swapSelection.some(s => s.cassetto === item.cassetto)
+                        ? "#3b82f6"
+                        : colors.border
+                    }`,
+                    background: swapSelection.some(s => s.cassetto === item.cassetto)
+                      ? "#dbeafe"
+                      : colors.background,
                     padding: 14,
                     textAlign: "left",
                     cursor: "pointer",
@@ -1059,8 +1178,20 @@ export default function App() {
                 return (
                   <tr
                     key={`row-${item.cassetto}`}
-                    onClick={() => openDrawer(item)}
-                    style={{ borderBottom: "1px solid #e5e7eb", cursor: "pointer" }}
+                    onClick={() => {
+                      if (swapMode) {
+                        handleSwapSelection(item);
+                      } else {
+                        openDrawer(item);
+                      }
+                    }}
+                    style={{
+                      borderBottom: "1px solid #e5e7eb",
+                      cursor: "pointer",
+                      backgroundColor: swapSelection.some(s => s.cassetto === item.cassetto)
+                        ? "#dbeafe"
+                        : "transparent"
+                    }}
                   >
                     <td style={{ padding: "12px 8px", fontWeight: 600 }}>{item.cassetto}</td>
                     <td style={{ padding: "12px 8px" }}>{summary.countArticoli}</td>
