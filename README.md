@@ -2,6 +2,9 @@
 
 🚀 Web app per la gestione di una cassettiera da negozio (magazzino ferramenta), con backend scalabile e database PostgreSQL.
 
+<img width="1878" height="805" alt="image" src="https://github.com/user-attachments/assets/1acc398e-ce00-40cb-a1bd-b260fcd1b440" />
+
+
 ---
 
 ## 🌍 Demo
