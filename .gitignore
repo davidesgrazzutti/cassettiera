@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 cassettiera-api
+
+postgres test.sql
