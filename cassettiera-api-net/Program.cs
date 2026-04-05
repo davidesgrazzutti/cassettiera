@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
@@ -29,6 +30,8 @@ string connString = rawConnString;
 string jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET")
     ?? builder.Configuration["Jwt:Secret"]
     ?? "change-me-in-render";
+// HS256 richiede almeno 256 bit: deriviamo sempre una chiave da 32 byte.
+byte[] jwtKeyBytes = SHA256.HashData(Encoding.UTF8.GetBytes(jwtSecret));
 
 // 🔹 Conversione automatica se formato URL postgres://
 if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
@@ -147,7 +150,7 @@ app.MapPost("/api/auth/login", async (LoginInput body) =>
     if (!isPasswordValid)
         return Results.Unauthorized();
 
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
+    var key = new SymmetricSecurityKey(jwtKeyBytes);
     var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
     var tokenDescriptor = new JwtSecurityToken(
         claims: new[]
