@@ -14,10 +14,37 @@ var app = builder.Build();
 
 app.UseCors();
 
-string connString =
+// 🔹 LETTURA CONNECTION STRING (supporta sia postgres:// che formato classico)
+string rawConnString =
     builder.Configuration.GetConnectionString("Postgres")
+    ?? Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? throw new InvalidOperationException("Connection string 'Postgres' mancante.");
-    
+
+
+string connString = rawConnString;
+
+// 🔹 Conversione automatica se formato URL postgres://
+if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+    rawConnString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+{
+    var uri = new Uri(rawConnString);
+    var userInfo = uri.UserInfo.Split(':', 2);
+
+    var username = Uri.UnescapeDataString(userInfo[0]);
+    var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+
+    connString = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Database = uri.AbsolutePath.Trim('/'),
+        Username = username,
+        Password = password,
+        SslMode = Npgsql.SslMode.Require,
+        TrustServerCertificate = true
+    }.ConnectionString;
+}
+
 // 🔹 GET ALL
 app.MapGet("/api/drawers", async () =>
 {
