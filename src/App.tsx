@@ -1903,18 +1903,17 @@ export default function App() {
               </BasicButton>
             )}
 
-
-            <BasicButton onClick={openSettings}>
-              <Settings size={16} />
-              Impostazioni
-            </BasicButton>
-
             {currentUser?.isAdmin && (
               <BasicButton onClick={openAdminUsers}>
                 <Users size={16} />
                 Admin utenti
               </BasicButton>
             )}
+
+            <BasicButton onClick={openSettings}>
+              <Settings size={16} />
+              Impostazioni
+            </BasicButton>
 
             <BasicButton onClick={handleLogout}>Esci</BasicButton>
 
