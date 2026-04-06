@@ -70,6 +70,7 @@ type AuthUser = {
 type AdminUserSettingsRow = {
   id: number;
   username: string;
+  isAdmin: boolean;
   isActive: boolean;
   createdAt: string;
   settings: {
@@ -557,9 +558,51 @@ type AdminUsersModalProps = {
   loading: boolean;
   error: string | null;
   users: AdminUserSettingsRow[];
+  currentUserId: number | null;
+  creatingUser: boolean;
+  deletingUserId: number | null;
+  onCreateUser: (payload: {
+    username: string;
+    password: string;
+    isAdmin: boolean;
+    isActive: boolean;
+  }) => Promise<void>;
+  onDeleteUser: (id: number) => Promise<void>;
+  onToggleUserActive: (id: number, isActive: boolean) => Promise<void>;
+  togglingUserId: number | null;
+  onToggleUserAdmin: (id: number, isAdmin: boolean) => Promise<void>;
+  togglingAdminUserId: number | null;
 };
 
-function AdminUsersModal({ isOpen, onClose, loading, error, users }: AdminUsersModalProps) {
+function AdminUsersModal({
+  isOpen,
+  onClose,
+  loading,
+  error,
+  users,
+  currentUserId,
+  creatingUser,
+  deletingUserId,
+  onCreateUser,
+  onDeleteUser,
+  onToggleUserActive,
+  togglingUserId,
+  onToggleUserAdmin,
+  togglingAdminUserId,
+}: AdminUsersModalProps) {
+  const [newUsername, setNewUsername] = useState<string>("");
+  const [newPassword, setNewPassword] = useState<string>("");
+  const [newIsAdmin, setNewIsAdmin] = useState<boolean>(false);
+  const [newIsActive, setNewIsActive] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setNewUsername("");
+    setNewPassword("");
+    setNewIsAdmin(false);
+    setNewIsActive(true);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -608,18 +651,93 @@ function AdminUsersModal({ isOpen, onClose, loading, error, users }: AdminUsersM
           </div>
         )}
 
+        <div style={{ ...styles.card, padding: 16, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>Aggiungi utente</div>
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault();
+              await onCreateUser({
+                username: newUsername,
+                password: newPassword,
+                isAdmin: newIsAdmin,
+                isActive: newIsActive,
+              });
+              setNewUsername("");
+              setNewPassword("");
+              setNewIsAdmin(false);
+              setNewIsActive(true);
+            }}
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}
+          >
+            <div>
+              <label style={styles.label}>Username</label>
+              <input
+                style={styles.input}
+                value={newUsername}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setNewUsername(e.target.value)}
+                placeholder="es. mario"
+                required
+                minLength={3}
+              />
+            </div>
+            <div>
+              <label style={styles.label}>Password</label>
+              <input
+                style={styles.input}
+                type="password"
+                value={newPassword}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)}
+                placeholder="almeno 4 caratteri"
+                required
+                minLength={4}
+              />
+            </div>
+            <div>
+              <button
+                type="submit"
+                disabled={creatingUser}
+                style={{
+                  ...styles.buttonPrimary,
+                  justifyContent: "center",
+                  opacity: creatingUser ? 0.6 : 1,
+                }}
+              >
+                {creatingUser ? "Creazione..." : "Aggiungi"}
+              </button>
+            </div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14 }}>
+              <input
+                type="checkbox"
+                checked={newIsAdmin}
+                onChange={(e) => setNewIsAdmin(e.target.checked)}
+              />
+              Utente admin
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14 }}>
+              <input
+                type="checkbox"
+                checked={newIsActive}
+                onChange={(e) => setNewIsActive(e.target.checked)}
+              />
+              Utente attivo
+            </label>
+          </form>
+        </div>
+
         {!loading && !error && (
           <div style={{ ...styles.card, padding: 0, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #e5e7eb", textAlign: "left", color: "#64748b" }}>
                   <th style={{ padding: "12px 10px" }}>Utente</th>
+                  <th style={{ padding: "12px 10px" }}>Admin</th>
                   <th style={{ padding: "12px 10px" }}>Attivo</th>
                   <th style={{ padding: "12px 10px" }}>Creato</th>
                   <th style={{ padding: "12px 10px" }}>Export</th>
                   <th style={{ padding: "12px 10px" }}>Swap</th>
                   <th style={{ padding: "12px 10px" }}>Tema</th>
                   <th style={{ padding: "12px 10px" }}>Ultimo salvataggio</th>
+                  <th style={{ padding: "12px 10px" }}>Azioni</th>
                 </tr>
               </thead>
               <tbody>
@@ -628,7 +746,48 @@ function AdminUsersModal({ isOpen, onClose, loading, error, users }: AdminUsersM
                     <td style={{ padding: "10px" }}>
                       <b>{user.username}</b>
                     </td>
-                    <td style={{ padding: "10px" }}>{user.isActive ? "Si" : "No"}</td>
+                    <td style={{ padding: "10px" }}>
+                      <button
+                        type="button"
+                        disabled={user.id === currentUserId || togglingAdminUserId === user.id}
+                        onClick={async () => {
+                          await onToggleUserAdmin(user.id, !user.isAdmin);
+                        }}
+                        style={{
+                          ...styles.button,
+                          borderColor: user.isAdmin ? "#bfdbfe" : "#d1fae5",
+                          color: user.isAdmin ? "#1e3a8a" : "#065f46",
+                          opacity: user.id === currentUserId || togglingAdminUserId === user.id ? 0.5 : 1,
+                        }}
+                      >
+                        {togglingAdminUserId === user.id
+                          ? "Aggiorno..."
+                          : user.isAdmin
+                          ? "Rimuovi admin"
+                          : "Rendi admin"}
+                      </button>
+                    </td>
+                    <td style={{ padding: "10px" }}>
+                      <button
+                        type="button"
+                        disabled={user.id === currentUserId || togglingUserId === user.id}
+                        onClick={async () => {
+                          await onToggleUserActive(user.id, !user.isActive);
+                        }}
+                        style={{
+                          ...styles.button,
+                          borderColor: user.isActive ? "#fcd34d" : "#86efac",
+                          color: user.isActive ? "#92400e" : "#166534",
+                          opacity: user.id === currentUserId || togglingUserId === user.id ? 0.5 : 1,
+                        }}
+                      >
+                        {togglingUserId === user.id
+                          ? "Aggiorno..."
+                          : user.isActive
+                          ? "Disattiva"
+                          : "Attiva"}
+                      </button>
+                    </td>
                     <td style={{ padding: "10px" }}>{new Date(user.createdAt).toLocaleString("it-IT")}</td>
                     <td style={{ padding: "10px" }}>{user.settings.exportButtonEnabled ? "On" : "Off"}</td>
                     <td style={{ padding: "10px" }}>{user.settings.swapButtonEnabled ? "On" : "Off"}</td>
@@ -637,6 +796,24 @@ function AdminUsersModal({ isOpen, onClose, loading, error, users }: AdminUsersM
                       {user.settings.updatedAt
                         ? new Date(user.settings.updatedAt).toLocaleString("it-IT")
                         : "Mai"}
+                    </td>
+                    <td style={{ padding: "10px" }}>
+                      <button
+                        type="button"
+                        disabled={user.id === currentUserId || deletingUserId === user.id}
+                        onClick={async () => {
+                          if (!window.confirm(`Eliminare l'utente ${user.username}?`)) return;
+                          await onDeleteUser(user.id);
+                        }}
+                        style={{
+                          ...styles.button,
+                          borderColor: "#fca5a5",
+                          color: "#991b1b",
+                          opacity: user.id === currentUserId || deletingUserId === user.id ? 0.5 : 1,
+                        }}
+                      >
+                        {deletingUserId === user.id ? "Elimino..." : "Elimina"}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -668,6 +845,10 @@ export default function App() {
   const [adminUsers, setAdminUsers] = useState<AdminUserSettingsRow[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState<boolean>(false);
   const [adminUsersError, setAdminUsersError] = useState<string | null>(null);
+  const [adminCreatingUser, setAdminCreatingUser] = useState<boolean>(false);
+  const [adminDeletingUserId, setAdminDeletingUserId] = useState<number | null>(null);
+  const [adminTogglingUserId, setAdminTogglingUserId] = useState<number | null>(null);
+  const [adminTogglingRoleUserId, setAdminTogglingRoleUserId] = useState<number | null>(null);
   const [search, setSearch] = useState<string>("");
   const [selected, setSelected] = useState<Cassetto | null>(null);
   const [editing, setEditing] = useState<boolean>(false);
@@ -873,6 +1054,97 @@ export default function App() {
       setAdminUsers([]);
     } finally {
       setAdminUsersLoading(false);
+    }
+  };
+
+  const createAdminUser = async (payload: {
+    username: string;
+    password: string;
+    isAdmin: boolean;
+    isActive: boolean;
+  }) => {
+    setAdminCreatingUser(true);
+    setAdminUsersError(null);
+
+    try {
+      await fetchJson(`${apiBaseUrl}/admin/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await loadAdminUsers();
+    } catch (createError) {
+      setAdminUsersError(
+        createError instanceof Error
+          ? createError.message
+          : "Errore creazione utente."
+      );
+    } finally {
+      setAdminCreatingUser(false);
+    }
+  };
+
+  const deleteAdminUser = async (id: number) => {
+    setAdminDeletingUserId(id);
+    setAdminUsersError(null);
+
+    try {
+      await fetchJson(`${apiBaseUrl}/admin/users/${id}`, {
+        method: "DELETE",
+      });
+      await loadAdminUsers();
+    } catch (deleteError) {
+      setAdminUsersError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Errore eliminazione utente."
+      );
+    } finally {
+      setAdminDeletingUserId(null);
+    }
+  };
+
+  const toggleAdminUserActive = async (id: number, isActive: boolean) => {
+    setAdminTogglingUserId(id);
+    setAdminUsersError(null);
+
+    try {
+      await fetchJson(`${apiBaseUrl}/admin/users/${id}/active`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      await loadAdminUsers();
+    } catch (toggleError) {
+      setAdminUsersError(
+        toggleError instanceof Error
+          ? toggleError.message
+          : "Errore aggiornamento stato utente."
+      );
+    } finally {
+      setAdminTogglingUserId(null);
+    }
+  };
+
+  const toggleAdminUserRole = async (id: number, isAdmin: boolean) => {
+    setAdminTogglingRoleUserId(id);
+    setAdminUsersError(null);
+
+    try {
+      await fetchJson(`${apiBaseUrl}/admin/users/${id}/admin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isAdmin }),
+      });
+      await loadAdminUsers();
+    } catch (toggleError) {
+      setAdminUsersError(
+        toggleError instanceof Error
+          ? toggleError.message
+          : "Errore aggiornamento ruolo admin."
+      );
+    } finally {
+      setAdminTogglingRoleUserId(null);
     }
   };
 
@@ -2260,6 +2532,15 @@ export default function App() {
         loading={adminUsersLoading}
         error={adminUsersError}
         users={adminUsers}
+        currentUserId={currentUser?.id ?? null}
+        creatingUser={adminCreatingUser}
+        deletingUserId={adminDeletingUserId}
+        onCreateUser={createAdminUser}
+        onDeleteUser={deleteAdminUser}
+        onToggleUserActive={toggleAdminUserActive}
+        togglingUserId={adminTogglingUserId}
+        onToggleUserAdmin={toggleAdminUserRole}
+        togglingAdminUserId={adminTogglingRoleUserId}
       />
     </div>
   );

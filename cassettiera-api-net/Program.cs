@@ -296,6 +296,7 @@ app.MapGet("/api/admin/users-settings", async (HttpRequest request) =>
         SELECT
             u.id,
             u.username,
+            u.is_admin,
             u.is_active,
             u.created_at,
             COALESCE(s.export_button_enabled, TRUE) AS export_button_enabled,
@@ -321,6 +322,7 @@ app.MapGet("/api/admin/users-settings", async (HttpRequest request) =>
         {
             id = reader.GetInt32(reader.GetOrdinal("id")),
             username = reader.GetString(reader.GetOrdinal("username")),
+            isAdmin = reader.GetBoolean(reader.GetOrdinal("is_admin")),
             isActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
             createdAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
             settings = new
@@ -334,6 +336,286 @@ app.MapGet("/api/admin/users-settings", async (HttpRequest request) =>
     }
 
     return Results.Ok(result);
+});
+
+app.MapPost("/api/admin/users", async (HttpRequest request, AdminCreateUserInput body) =>
+{
+    var principal = TryGetAuthenticatedPrincipal(request, jwtKeyBytes);
+    if (principal is null)
+        return Results.Unauthorized();
+
+    var isAdmin = principal.FindFirst("is_admin")?.Value;
+    if (!string.Equals(isAdmin, "true", StringComparison.OrdinalIgnoreCase))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var username = (body.Username ?? string.Empty).Trim();
+    var password = body.Password ?? string.Empty;
+    var isUserAdmin = body.IsAdmin ?? false;
+    var isActive = body.IsActive ?? true;
+
+    if (string.IsNullOrWhiteSpace(username) || username.Length < 3)
+        return Results.BadRequest(new { error = "Username minimo 3 caratteri" });
+
+    if (string.IsNullOrWhiteSpace(password) || password.Length < 4)
+        return Results.BadRequest(new { error = "Password minima 4 caratteri" });
+
+    var passwordHash = BCrypt.Net.BCrypt.HashPassword(password);
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+
+    try
+    {
+        await using var cmd = new NpgsqlCommand("""
+            INSERT INTO users (username, password_hash, is_admin, is_active)
+            VALUES (@username, @password_hash, @is_admin, @is_active)
+            RETURNING id, username, is_admin, is_active, created_at
+        """, conn);
+
+        cmd.Parameters.AddWithValue("username", username);
+        cmd.Parameters.AddWithValue("password_hash", passwordHash);
+        cmd.Parameters.AddWithValue("is_admin", isUserAdmin);
+        cmd.Parameters.AddWithValue("is_active", isActive);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+            return Results.Problem("Errore creazione utente");
+
+        return Results.Created("", new
+        {
+            id = reader.GetInt32(reader.GetOrdinal("id")),
+            username = reader.GetString(reader.GetOrdinal("username")),
+            isAdmin = reader.GetBoolean(reader.GetOrdinal("is_admin")),
+            isActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
+            createdAt = reader.GetDateTime(reader.GetOrdinal("created_at"))
+        });
+    }
+    catch (PostgresException ex) when (ex.SqlState == "23505")
+    {
+        return Results.Conflict(new { error = "Username già esistente" });
+    }
+});
+
+app.MapDelete("/api/admin/users/{id:int}", async (HttpRequest request, int id) =>
+{
+    var principal = TryGetAuthenticatedPrincipal(request, jwtKeyBytes);
+    if (principal is null)
+        return Results.Unauthorized();
+
+    var isAdmin = principal.FindFirst("is_admin")?.Value;
+    if (!string.Equals(isAdmin, "true", StringComparison.OrdinalIgnoreCase))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var requesterId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (requesterId is null)
+        return Results.Unauthorized();
+
+    if (id == requesterId.Value)
+        return Results.BadRequest(new { error = "Non puoi eliminare il tuo utente" });
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+    await using var tx = await conn.BeginTransactionAsync();
+
+    try
+    {
+        await using var cmdUser = new NpgsqlCommand("SELECT is_admin FROM users WHERE id=@id", conn, tx);
+        cmdUser.Parameters.AddWithValue("id", id);
+        var userIsAdminObj = await cmdUser.ExecuteScalarAsync();
+
+        if (userIsAdminObj is null)
+        {
+            await tx.RollbackAsync();
+            return Results.NotFound(new { error = "Utente non trovato" });
+        }
+
+        var userIsAdmin = Convert.ToBoolean(userIsAdminObj);
+        if (userIsAdmin)
+        {
+            await using var cmdCountAdmins = new NpgsqlCommand("SELECT COUNT(*) FROM users WHERE is_admin = TRUE", conn, tx);
+            var adminCount = Convert.ToInt32(await cmdCountAdmins.ExecuteScalarAsync());
+            if (adminCount <= 1)
+            {
+                await tx.RollbackAsync();
+                return Results.BadRequest(new { error = "Impossibile eliminare l'ultimo admin" });
+            }
+        }
+
+        await using var cmdDelete = new NpgsqlCommand("DELETE FROM users WHERE id=@id", conn, tx);
+        cmdDelete.Parameters.AddWithValue("id", id);
+        await cmdDelete.ExecuteNonQueryAsync();
+
+        await tx.CommitAsync();
+        return Results.Ok(new { message = "Utente eliminato" });
+    }
+    catch (Exception ex)
+    {
+        await tx.RollbackAsync();
+        return Results.Problem("Errore eliminazione utente: " + ex.Message);
+    }
+});
+
+app.MapPatch("/api/admin/users/{id:int}/active", async (HttpRequest request, int id, AdminSetUserActiveInput body) =>
+{
+    var principal = TryGetAuthenticatedPrincipal(request, jwtKeyBytes);
+    if (principal is null)
+        return Results.Unauthorized();
+
+    var isAdmin = principal.FindFirst("is_admin")?.Value;
+    if (!string.Equals(isAdmin, "true", StringComparison.OrdinalIgnoreCase))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var requesterId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (requesterId is null)
+        return Results.Unauthorized();
+
+    var nextIsActive = body.IsActive;
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+    await using var tx = await conn.BeginTransactionAsync();
+
+    try
+    {
+        await using var cmdUser = new NpgsqlCommand("SELECT id, is_admin, is_active FROM users WHERE id=@id", conn, tx);
+        cmdUser.Parameters.AddWithValue("id", id);
+
+        await using var reader = await cmdUser.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            await tx.RollbackAsync();
+            return Results.NotFound(new { error = "Utente non trovato" });
+        }
+
+        var targetIsAdmin = reader.GetBoolean(reader.GetOrdinal("is_admin"));
+        var targetIsActive = reader.GetBoolean(reader.GetOrdinal("is_active"));
+        await reader.CloseAsync();
+
+        if (targetIsActive == nextIsActive)
+        {
+            await tx.RollbackAsync();
+            return Results.Ok(new { message = "Nessuna modifica", isActive = targetIsActive });
+        }
+
+        if (id == requesterId.Value && !nextIsActive)
+        {
+            await tx.RollbackAsync();
+            return Results.BadRequest(new { error = "Non puoi disattivare il tuo utente" });
+        }
+
+        if (targetIsAdmin && !nextIsActive)
+        {
+            await using var cmdCountActiveAdmins = new NpgsqlCommand(
+                "SELECT COUNT(*) FROM users WHERE is_admin = TRUE AND is_active = TRUE",
+                conn,
+                tx
+            );
+            var activeAdminCount = Convert.ToInt32(await cmdCountActiveAdmins.ExecuteScalarAsync());
+            if (activeAdminCount <= 1)
+            {
+                await tx.RollbackAsync();
+                return Results.BadRequest(new { error = "Impossibile disattivare l'ultimo admin attivo" });
+            }
+        }
+
+        await using var cmdUpdate = new NpgsqlCommand(
+            "UPDATE users SET is_active=@is_active WHERE id=@id",
+            conn,
+            tx
+        );
+        cmdUpdate.Parameters.AddWithValue("is_active", nextIsActive);
+        cmdUpdate.Parameters.AddWithValue("id", id);
+        await cmdUpdate.ExecuteNonQueryAsync();
+
+        await tx.CommitAsync();
+        return Results.Ok(new { message = "Stato utente aggiornato", isActive = nextIsActive });
+    }
+    catch (Exception ex)
+    {
+        await tx.RollbackAsync();
+        return Results.Problem("Errore aggiornamento stato utente: " + ex.Message);
+    }
+});
+
+app.MapPatch("/api/admin/users/{id:int}/admin", async (HttpRequest request, int id, AdminSetUserAdminInput body) =>
+{
+    var principal = TryGetAuthenticatedPrincipal(request, jwtKeyBytes);
+    if (principal is null)
+        return Results.Unauthorized();
+
+    var isAdmin = principal.FindFirst("is_admin")?.Value;
+    if (!string.Equals(isAdmin, "true", StringComparison.OrdinalIgnoreCase))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var requesterId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (requesterId is null)
+        return Results.Unauthorized();
+
+    var nextIsAdmin = body.IsAdmin;
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+    await using var tx = await conn.BeginTransactionAsync();
+
+    try
+    {
+        await using var cmdUser = new NpgsqlCommand("SELECT id, is_admin FROM users WHERE id=@id", conn, tx);
+        cmdUser.Parameters.AddWithValue("id", id);
+
+        await using var reader = await cmdUser.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            await tx.RollbackAsync();
+            return Results.NotFound(new { error = "Utente non trovato" });
+        }
+
+        var targetIsAdmin = reader.GetBoolean(reader.GetOrdinal("is_admin"));
+        await reader.CloseAsync();
+
+        if (targetIsAdmin == nextIsAdmin)
+        {
+            await tx.RollbackAsync();
+            return Results.Ok(new { message = "Nessuna modifica", isAdmin = targetIsAdmin });
+        }
+
+        if (id == requesterId.Value && !nextIsAdmin)
+        {
+            await tx.RollbackAsync();
+            return Results.BadRequest(new { error = "Non puoi rimuovere il tuo ruolo admin" });
+        }
+
+        if (targetIsAdmin && !nextIsAdmin)
+        {
+            await using var cmdCountAdmins = new NpgsqlCommand(
+                "SELECT COUNT(*) FROM users WHERE is_admin = TRUE",
+                conn,
+                tx
+            );
+            var adminCount = Convert.ToInt32(await cmdCountAdmins.ExecuteScalarAsync());
+            if (adminCount <= 1)
+            {
+                await tx.RollbackAsync();
+                return Results.BadRequest(new { error = "Impossibile rimuovere l'ultimo admin" });
+            }
+        }
+
+        await using var cmdUpdate = new NpgsqlCommand(
+            "UPDATE users SET is_admin=@is_admin WHERE id=@id",
+            conn,
+            tx
+        );
+        cmdUpdate.Parameters.AddWithValue("is_admin", nextIsAdmin);
+        cmdUpdate.Parameters.AddWithValue("id", id);
+        await cmdUpdate.ExecuteNonQueryAsync();
+
+        await tx.CommitAsync();
+        return Results.Ok(new { message = "Ruolo admin aggiornato", isAdmin = nextIsAdmin });
+    }
+    catch (Exception ex)
+    {
+        await tx.RollbackAsync();
+        return Results.Problem("Errore aggiornamento ruolo admin: " + ex.Message);
+    }
 });
 
 // 🔹 GET BY ID
@@ -835,4 +1117,31 @@ public class UserSettingsInput
 
     [JsonPropertyName("themeButtonEnabled")]
     public bool? ThemeButtonEnabled { get; set; }
+}
+
+public class AdminCreateUserInput
+{
+    [JsonPropertyName("username")]
+    public string? Username { get; set; }
+
+    [JsonPropertyName("password")]
+    public string? Password { get; set; }
+
+    [JsonPropertyName("isAdmin")]
+    public bool? IsAdmin { get; set; }
+
+    [JsonPropertyName("isActive")]
+    public bool? IsActive { get; set; }
+}
+
+public class AdminSetUserActiveInput
+{
+    [JsonPropertyName("isActive")]
+    public bool IsActive { get; set; }
+}
+
+public class AdminSetUserAdminInput
+{
+    [JsonPropertyName("isAdmin")]
+    public bool IsAdmin { get; set; }
 }
