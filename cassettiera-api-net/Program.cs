@@ -32,6 +32,8 @@ string jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET")
     ?? "change-me-in-render";
 // HS256 richiede almeno 256 bit: deriviamo sempre una chiave da 32 byte.
 byte[] jwtKeyBytes = SHA256.HashData(Encoding.UTF8.GetBytes(jwtSecret));
+const string defaultApiMode = "render";
+const int defaultLocalApiPort = 5285;
 
 // 🔹 Conversione automatica se formato URL postgres://
 if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
@@ -54,6 +56,8 @@ if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase
         TrustServerCertificate = true
     }.ConnectionString;
 }
+
+await EnsureUserSettingsTableAsync(connString);
 
 // 🔹 GET ALL
 app.MapGet("/api/drawers", async () =>
@@ -172,6 +176,93 @@ app.MapPost("/api/auth/login", async (LoginInput body) =>
             id = userId,
             username = dbUsername
         }
+    });
+});
+
+app.MapGet("/api/user-settings", async (HttpRequest request) =>
+{
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+
+    await using var cmd = new NpgsqlCommand("""
+        SELECT export_button_enabled, swap_button_enabled, theme_button_enabled, api_mode, local_api_port
+        FROM user_settings
+        WHERE user_id = @user_id
+        LIMIT 1
+    """, conn);
+
+    cmd.Parameters.AddWithValue("user_id", userId.Value);
+    await using var reader = await cmd.ExecuteReaderAsync();
+
+    if (!await reader.ReadAsync())
+    {
+        return Results.Ok(new
+        {
+            exportButtonEnabled = true,
+            swapButtonEnabled = true,
+            themeButtonEnabled = true,
+            apiMode = defaultApiMode,
+            localApiPort = defaultLocalApiPort
+        });
+    }
+
+    return Results.Ok(new
+    {
+        exportButtonEnabled = reader.GetBoolean(reader.GetOrdinal("export_button_enabled")),
+        swapButtonEnabled = reader.GetBoolean(reader.GetOrdinal("swap_button_enabled")),
+        themeButtonEnabled = reader.GetBoolean(reader.GetOrdinal("theme_button_enabled")),
+        apiMode = NormalizeApiMode(reader.GetString(reader.GetOrdinal("api_mode"))),
+        localApiPort = NormalizeLocalApiPort(reader.GetInt32(reader.GetOrdinal("local_api_port")))
+    });
+});
+
+app.MapPut("/api/user-settings", async (HttpRequest request, UserSettingsInput body) =>
+{
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
+    var exportButtonEnabled = body.ExportButtonEnabled ?? true;
+    var swapButtonEnabled = body.SwapButtonEnabled ?? true;
+    var themeButtonEnabled = body.ThemeButtonEnabled ?? true;
+    var apiMode = NormalizeApiMode(body.ApiMode);
+    var localApiPort = NormalizeLocalApiPort(body.LocalApiPort);
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+
+    await using var cmd = new NpgsqlCommand("""
+        INSERT INTO user_settings (user_id, export_button_enabled, swap_button_enabled, theme_button_enabled, api_mode, local_api_port, updated_at)
+        VALUES (@user_id, @export_button_enabled, @swap_button_enabled, @theme_button_enabled, @api_mode, @local_api_port, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET export_button_enabled = EXCLUDED.export_button_enabled,
+            swap_button_enabled = EXCLUDED.swap_button_enabled,
+            theme_button_enabled = EXCLUDED.theme_button_enabled,
+            api_mode = EXCLUDED.api_mode,
+            local_api_port = EXCLUDED.local_api_port,
+            updated_at = NOW()
+    """, conn);
+
+    cmd.Parameters.AddWithValue("user_id", userId.Value);
+    cmd.Parameters.AddWithValue("export_button_enabled", exportButtonEnabled);
+    cmd.Parameters.AddWithValue("swap_button_enabled", swapButtonEnabled);
+    cmd.Parameters.AddWithValue("theme_button_enabled", themeButtonEnabled);
+    cmd.Parameters.AddWithValue("api_mode", apiMode);
+    cmd.Parameters.AddWithValue("local_api_port", localApiPort);
+
+    await cmd.ExecuteNonQueryAsync();
+
+    return Results.Ok(new
+    {
+        exportButtonEnabled,
+        swapButtonEnabled,
+        themeButtonEnabled,
+        apiMode,
+        localApiPort
     });
 });
 
@@ -514,6 +605,79 @@ app.MapPost("/api/swap", async (SwapInput body) =>
 
 app.Run();
 
+static async Task EnsureUserSettingsTableAsync(string connectionString)
+{
+    await using var conn = new NpgsqlConnection(connectionString);
+    await conn.OpenAsync();
+
+    await using var cmd = new NpgsqlCommand("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            export_button_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            swap_button_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            theme_button_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            api_mode VARCHAR(20) NOT NULL DEFAULT 'render' CHECK (api_mode IN ('render', 'localhost')),
+            local_api_port INTEGER NOT NULL DEFAULT 5285 CHECK (local_api_port BETWEEN 1 AND 65535),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """, conn);
+
+    await cmd.ExecuteNonQueryAsync();
+}
+
+static int? TryGetAuthenticatedUserId(HttpRequest request, byte[] signingKey)
+{
+    var authHeader = request.Headers.Authorization.ToString();
+    if (string.IsNullOrWhiteSpace(authHeader) ||
+        !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        return null;
+    }
+
+    var token = authHeader["Bearer ".Length..].Trim();
+    if (string.IsNullOrWhiteSpace(token))
+        return null;
+
+    var handler = new JwtSecurityTokenHandler();
+
+    try
+    {
+        var principal = handler.ValidateToken(token, new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(signingKey),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        }, out _);
+
+        var subject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        return int.TryParse(subject, out var userId) ? userId : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static string NormalizeApiMode(string? apiMode)
+{
+    return string.Equals(apiMode, "localhost", StringComparison.OrdinalIgnoreCase)
+        ? "localhost"
+        : defaultApiMode;
+}
+
+static int NormalizeLocalApiPort(int? localApiPort)
+{
+    if (localApiPort is >= 1 and <= 65535)
+        return localApiPort.Value;
+
+    return defaultLocalApiPort;
+}
+
 // 🔹 MODELLI (dopo app.Run())
 public class DrawerInput
 {
@@ -579,4 +743,22 @@ public class LoginInput
 
     [JsonPropertyName("password")]
     public string? Password { get; set; }
+}
+
+public class UserSettingsInput
+{
+    [JsonPropertyName("exportButtonEnabled")]
+    public bool? ExportButtonEnabled { get; set; }
+
+    [JsonPropertyName("swapButtonEnabled")]
+    public bool? SwapButtonEnabled { get; set; }
+
+    [JsonPropertyName("themeButtonEnabled")]
+    public bool? ThemeButtonEnabled { get; set; }
+
+    [JsonPropertyName("apiMode")]
+    public string? ApiMode { get; set; }
+
+    [JsonPropertyName("localApiPort")]
+    public int? LocalApiPort { get; set; }
 }
