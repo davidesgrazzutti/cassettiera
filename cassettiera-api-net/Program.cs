@@ -58,6 +58,7 @@ if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase
 }
 
 await EnsureUserSettingsTableAsync(connString);
+await EnsureUsersIsAdminColumnAsync(connString);
 
 // 🔹 GET ALL
 app.MapGet("/api/drawers", async () =>
@@ -130,7 +131,7 @@ app.MapPost("/api/auth/login", async (LoginInput body) =>
     await conn.OpenAsync();
 
     await using var cmd = new NpgsqlCommand("""
-        SELECT id, username, password_hash, is_active
+        SELECT id, username, password_hash, is_active, is_admin
         FROM users
         WHERE LOWER(username) = LOWER(@username)
         LIMIT 1
@@ -146,6 +147,7 @@ app.MapPost("/api/auth/login", async (LoginInput body) =>
     var dbUsername = reader.GetString(reader.GetOrdinal("username"));
     var passwordHash = reader.GetString(reader.GetOrdinal("password_hash"));
     var isActive = reader.GetBoolean(reader.GetOrdinal("is_active"));
+    var isAdmin = reader.GetBoolean(reader.GetOrdinal("is_admin"));
 
     if (!isActive)
         return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -160,7 +162,8 @@ app.MapPost("/api/auth/login", async (LoginInput body) =>
         claims: new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            new Claim(JwtRegisteredClaimNames.UniqueName, dbUsername)
+            new Claim(JwtRegisteredClaimNames.UniqueName, dbUsername),
+            new Claim("is_admin", isAdmin ? "true" : "false")
         },
         expires: DateTime.UtcNow.AddHours(12),
         signingCredentials: credentials
@@ -174,8 +177,32 @@ app.MapPost("/api/auth/login", async (LoginInput body) =>
         user = new
         {
             id = userId,
-            username = dbUsername
+            username = dbUsername,
+            isAdmin
         }
+    });
+});
+
+app.MapGet("/api/auth/me", (HttpRequest request) =>
+{
+    var principal = TryGetAuthenticatedPrincipal(request, jwtKeyBytes);
+    if (principal is null)
+        return Results.Unauthorized();
+
+    var userId = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+        ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    var username = principal.FindFirst(JwtRegisteredClaimNames.UniqueName)?.Value
+        ?? principal.FindFirst(ClaimTypes.Name)?.Value;
+    var isAdmin = principal.FindFirst("is_admin")?.Value;
+
+    if (!int.TryParse(userId, out var parsedUserId) || string.IsNullOrWhiteSpace(username))
+        return Results.Unauthorized();
+
+    return Results.Ok(new
+    {
+        id = parsedUserId,
+        username,
+        isAdmin = string.Equals(isAdmin, "true", StringComparison.OrdinalIgnoreCase)
     });
 });
 
@@ -264,6 +291,67 @@ app.MapPut("/api/user-settings", async (HttpRequest request, UserSettingsInput b
         apiMode,
         localApiPort
     });
+});
+
+app.MapGet("/api/admin/users-settings", async (HttpRequest request) =>
+{
+    var principal = TryGetAuthenticatedPrincipal(request, jwtKeyBytes);
+    if (principal is null)
+        return Results.Unauthorized();
+
+    var isAdmin = principal.FindFirst("is_admin")?.Value;
+    if (!string.Equals(isAdmin, "true", StringComparison.OrdinalIgnoreCase))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+
+    await using var cmd = new NpgsqlCommand("""
+        SELECT
+            u.id,
+            u.username,
+            u.is_active,
+            u.created_at,
+            COALESCE(s.export_button_enabled, TRUE) AS export_button_enabled,
+            COALESCE(s.swap_button_enabled, TRUE) AS swap_button_enabled,
+            COALESCE(s.theme_button_enabled, TRUE) AS theme_button_enabled,
+            COALESCE(s.api_mode, 'render') AS api_mode,
+            COALESCE(s.local_api_port, 5285) AS local_api_port,
+            s.updated_at AS settings_updated_at
+        FROM users u
+        LEFT JOIN user_settings s ON s.user_id = u.id
+        ORDER BY u.username
+    """, conn);
+
+    await using var reader = await cmd.ExecuteReaderAsync();
+    var result = new List<object>();
+
+    while (await reader.ReadAsync())
+    {
+        var settingsUpdatedAtOrdinal = reader.GetOrdinal("settings_updated_at");
+        DateTime? settingsUpdatedAt = reader.IsDBNull(settingsUpdatedAtOrdinal)
+            ? null
+            : reader.GetDateTime(settingsUpdatedAtOrdinal);
+
+        result.Add(new
+        {
+            id = reader.GetInt32(reader.GetOrdinal("id")),
+            username = reader.GetString(reader.GetOrdinal("username")),
+            isActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
+            createdAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+            settings = new
+            {
+                exportButtonEnabled = reader.GetBoolean(reader.GetOrdinal("export_button_enabled")),
+                swapButtonEnabled = reader.GetBoolean(reader.GetOrdinal("swap_button_enabled")),
+                themeButtonEnabled = reader.GetBoolean(reader.GetOrdinal("theme_button_enabled")),
+                apiMode = NormalizeApiMode(reader.GetString(reader.GetOrdinal("api_mode"))),
+                localApiPort = NormalizeLocalApiPort(reader.GetInt32(reader.GetOrdinal("local_api_port"))),
+                updatedAt = settingsUpdatedAt
+            }
+        });
+    }
+
+    return Results.Ok(result);
 });
 
 // 🔹 GET BY ID
@@ -625,7 +713,36 @@ static async Task EnsureUserSettingsTableAsync(string connectionString)
     await cmd.ExecuteNonQueryAsync();
 }
 
+static async Task EnsureUsersIsAdminColumnAsync(string connectionString)
+{
+    await using var conn = new NpgsqlConnection(connectionString);
+    await conn.OpenAsync();
+
+    await using var cmd = new NpgsqlCommand("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+
+        UPDATE users
+        SET is_admin = TRUE
+        WHERE LOWER(username) = 'admin';
+    """, conn);
+
+    await cmd.ExecuteNonQueryAsync();
+}
+
 static int? TryGetAuthenticatedUserId(HttpRequest request, byte[] signingKey)
+{
+    var principal = TryGetAuthenticatedPrincipal(request, signingKey);
+    if (principal is null)
+        return null;
+
+    var subject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+        ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+    return int.TryParse(subject, out var userId) ? userId : null;
+}
+
+static ClaimsPrincipal? TryGetAuthenticatedPrincipal(HttpRequest request, byte[] signingKey)
 {
     var authHeader = request.Headers.Authorization.ToString();
     if (string.IsNullOrWhiteSpace(authHeader) ||
@@ -642,7 +759,7 @@ static int? TryGetAuthenticatedUserId(HttpRequest request, byte[] signingKey)
 
     try
     {
-        var principal = handler.ValidateToken(token, new TokenValidationParameters
+        return handler.ValidateToken(token, new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(signingKey),
@@ -651,11 +768,6 @@ static int? TryGetAuthenticatedUserId(HttpRequest request, byte[] signingKey)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         }, out _);
-
-        var subject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
-            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-        return int.TryParse(subject, out var userId) ? userId : null;
     }
     catch
     {

@@ -19,6 +19,7 @@ import {
   ArrowLeftRight,
   Moon,
   Sun,
+  Users,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -60,6 +61,27 @@ type UserSettings = {
   themeButtonEnabled: boolean;
   apiMode: ApiMode;
   localApiPort: number;
+};
+
+type AuthUser = {
+  id: number;
+  username: string;
+  isAdmin: boolean;
+};
+
+type AdminUserSettingsRow = {
+  id: number;
+  username: string;
+  isActive: boolean;
+  createdAt: string;
+  settings: {
+    exportButtonEnabled: boolean;
+    swapButtonEnabled: boolean;
+    themeButtonEnabled: boolean;
+    apiMode: ApiMode;
+    localApiPort: number;
+    updatedAt: string | null;
+  };
 };
 
 const DEFAULT_LOCAL_API_PORT = "5285";
@@ -319,10 +341,6 @@ type SettingsModalProps = {
   onSwapButtonEnabledChange: (value: boolean) => void;
   themeButtonEnabled: boolean;
   onThemeButtonEnabledChange: (value: boolean) => void;
-  apiMode: ApiMode;
-  onApiModeChange: (mode: ApiMode) => void;
-  localApiPort: string;
-  onLocalApiPortChange: (port: string) => void;
 };
 
 function SettingsModal({
@@ -334,21 +352,7 @@ function SettingsModal({
   onSwapButtonEnabledChange,
   themeButtonEnabled,
   onThemeButtonEnabledChange,
-  apiMode,
-  onApiModeChange,
-  localApiPort,
-  onLocalApiPortChange,
 }: SettingsModalProps) {
-  const [versionClickCount, setVersionClickCount] = useState<number>(0);
-  const [apiMenuVisible, setApiMenuVisible] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setVersionClickCount(0);
-      setApiMenuVisible(false);
-    }
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
   return (
@@ -440,72 +444,10 @@ function SettingsModal({
             </div>
           </div>
 
-          <div
-            style={{ ...styles.card, padding: 16, cursor: "pointer" }}
-            onClick={() => {
-              const next = versionClickCount + 1;
-              setVersionClickCount(next);
-              if (next >= 5) {
-                setApiMenuVisible(true);
-              }
-            }}
-          >
+          <div style={{ ...styles.card, padding: 16 }}>
             <div style={{ fontSize: 14, color: "#64748b", marginBottom: 8 }}>Versione</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: "#0f172a" }}>1.0.0</div>
-            {!apiMenuVisible && (
-              <div style={{ marginTop: 8, fontSize: 12, color: "#94a3b8" }}>
-              </div>
-            )}
           </div>
-
-          {apiMenuVisible && (
-            <div style={{ ...styles.card, padding: 16 }}>
-              <div style={{ fontSize: 14, color: "#64748b", marginBottom: 8 }}>API da usare</div>
-              <div style={{ display: "grid", gap: 10 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <input
-                    type="radio"
-                    name="apiMode"
-                    checked={apiMode === "render"}
-                    onChange={() => onApiModeChange("render")}
-                  />
-                  Usa Render
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <input
-                    type="radio"
-                    name="apiMode"
-                    checked={apiMode === "localhost"}
-                    onChange={() => onApiModeChange("localhost")}
-                  />
-                  Usa localhost
-                </label>
-                {apiMode === "localhost" && (
-                  <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-                    <label style={{ display: "grid", gap: 6, fontSize: 13, color: "#475569" }}>
-                      Porta localhost
-                      <input
-                        type="number"
-                        min="1"
-                        max="65535"
-                        value={localApiPort}
-                        onChange={(e) => onLocalApiPortChange(e.target.value)}
-                        style={{
-                          ...styles.input,
-                          width: "100%",
-                          maxWidth: 160,
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </label>
-                    <div style={{ fontSize: 12, color: "#64748b" }}>
-                      L’URL locale sarà http://localhost:{localApiPort}/api
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
         </div>
 
@@ -613,6 +555,112 @@ function FilteredDrawersModal({ isOpen, onClose, title, drawers, onDrawerClick }
   );
 }
 
+type AdminUsersModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  loading: boolean;
+  error: string | null;
+  users: AdminUserSettingsRow[];
+};
+
+function AdminUsersModal({ isOpen, onClose, loading, error, users }: AdminUsersModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.5)",
+        display: "grid",
+        placeItems: "center",
+        padding: 20,
+        zIndex: 1001,
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+        style={{
+          background: "white",
+          width: "min(1100px, 96vw)",
+          maxHeight: "88vh",
+          borderRadius: 20,
+          padding: 20,
+          boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+          overflow: "auto",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <Users size={22} />
+          <h2 style={{ margin: 0 }}>Amministrazione utenti</h2>
+        </div>
+
+        {loading && (
+          <div style={{ ...styles.card, padding: 16, color: "#1d4ed8", border: "1px solid #93c5fd", background: "#eff6ff" }}>
+            Caricamento utenti...
+          </div>
+        )}
+
+        {error && (
+          <div style={{ ...styles.card, padding: 16, color: "#991b1b", border: "1px solid #fca5a5", background: "#fef2f2" }}>
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && (
+          <div style={{ ...styles.card, padding: 0, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #e5e7eb", textAlign: "left", color: "#64748b" }}>
+                  <th style={{ padding: "12px 10px" }}>Utente</th>
+                  <th style={{ padding: "12px 10px" }}>Attivo</th>
+                  <th style={{ padding: "12px 10px" }}>Creato</th>
+                  <th style={{ padding: "12px 10px" }}>Export</th>
+                  <th style={{ padding: "12px 10px" }}>Swap</th>
+                  <th style={{ padding: "12px 10px" }}>Tema</th>
+                  <th style={{ padding: "12px 10px" }}>API</th>
+                  <th style={{ padding: "12px 10px" }}>Porta</th>
+                  <th style={{ padding: "12px 10px" }}>Ultimo salvataggio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                    <td style={{ padding: "10px" }}>
+                      <b>{user.username}</b>
+                    </td>
+                    <td style={{ padding: "10px" }}>{user.isActive ? "Si" : "No"}</td>
+                    <td style={{ padding: "10px" }}>{new Date(user.createdAt).toLocaleString("it-IT")}</td>
+                    <td style={{ padding: "10px" }}>{user.settings.exportButtonEnabled ? "On" : "Off"}</td>
+                    <td style={{ padding: "10px" }}>{user.settings.swapButtonEnabled ? "On" : "Off"}</td>
+                    <td style={{ padding: "10px" }}>{user.settings.themeButtonEnabled ? "On" : "Off"}</td>
+                    <td style={{ padding: "10px" }}>{user.settings.apiMode}</td>
+                    <td style={{ padding: "10px" }}>{user.settings.localApiPort}</td>
+                    <td style={{ padding: "10px" }}>
+                      {user.settings.updatedAt
+                        ? new Date(user.settings.updatedAt).toLocaleString("it-IT")
+                        : "Mai"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+          <BasicButton onClick={onClose}>Chiudi</BasicButton>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function App() {
   const AUTH_TOKEN_STORAGE_KEY = "cassettiera_auth_token";
 
@@ -623,6 +671,11 @@ export default function App() {
   const [loginUsername, setLoginUsername] = useState<string>("");
   const [loginPassword, setLoginPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [showAdminUsers, setShowAdminUsers] = useState<boolean>(false);
+  const [adminUsers, setAdminUsers] = useState<AdminUserSettingsRow[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState<boolean>(false);
+  const [adminUsersError, setAdminUsersError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>("");
   const [selected, setSelected] = useState<Cassetto | null>(null);
   const [editing, setEditing] = useState<boolean>(false);
@@ -835,6 +888,31 @@ export default function App() {
     return response.json();
   };
 
+  const loadCurrentUser = async (baseUrl = apiBaseUrl) => {
+    const profile = await fetchJson<AuthUser>(`${baseUrl}/auth/me`);
+    setCurrentUser(profile);
+    return profile;
+  };
+
+  const loadAdminUsers = async (baseUrl = apiBaseUrl) => {
+    setAdminUsersLoading(true);
+    setAdminUsersError(null);
+
+    try {
+      const data = await fetchJson<AdminUserSettingsRow[]>(`${baseUrl}/admin/users-settings`);
+      setAdminUsers(data);
+    } catch (adminFetchError) {
+      setAdminUsersError(
+        adminFetchError instanceof Error
+          ? adminFetchError.message
+          : "Errore caricamento utenti amministrazione."
+      );
+      setAdminUsers([]);
+    } finally {
+      setAdminUsersLoading(false);
+    }
+  };
+
   const loadDrawers = async (baseUrl = apiBaseUrl) => {
     setLoading(true);
     setError(null);
@@ -857,22 +935,37 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated) {
+      setCurrentUser(null);
       return;
     }
 
     const bootstrap = async () => {
       try {
+        const profile = await loadCurrentUser();
         const settings = await fetchJson<UserSettings>(`${apiBaseUrl}/user-settings`);
         applyUserSettings(settings);
-        await loadDrawers(buildApiBaseUrl(normalizeApiMode(settings.apiMode), String(settings.localApiPort)));
+        const nextBaseUrl = buildApiBaseUrl(normalizeApiMode(settings.apiMode), String(settings.localApiPort));
+
+        if (profile.isAdmin && showAdminUsers) {
+          await loadAdminUsers(nextBaseUrl);
+        }
+
+        await loadDrawers(nextBaseUrl);
       } catch (settingsError) {
         console.error("Errore caricamento impostazioni utente:", settingsError);
+        setCurrentUser(null);
         await loadDrawers();
       }
     };
 
     void bootstrap();
   }, [isAuthenticated]);
+
+  const openAdminUsers = async () => {
+    if (!currentUser?.isAdmin) return;
+    setShowAdminUsers(true);
+    await loadAdminUsers();
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1288,7 +1381,7 @@ export default function App() {
     event.preventDefault();
 
     try {
-      const response = await fetchJson<{ token: string }>(`${apiBaseUrl}/auth/login`, {
+      const response = await fetchJson<{ token: string; user: AuthUser }>(`${apiBaseUrl}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1298,6 +1391,7 @@ export default function App() {
       });
 
       window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, response.token);
+      setCurrentUser(response.user);
       setIsAuthenticated(true);
       setLoginError(null);
     } catch (loginFetchError) {
@@ -1311,9 +1405,13 @@ export default function App() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
+    setCurrentUser(null);
     setLoginUsername("");
     setLoginPassword("");
     setLoginError(null);
+    setShowAdminUsers(false);
+    setAdminUsers([]);
+    setAdminUsersError(null);
     window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
   };
 
@@ -1334,6 +1432,7 @@ export default function App() {
           </p>
 
           <form onSubmit={handleLogin} style={{ display: "grid", gap: 14 }}>
+
             <div>
               <label style={styles.label}>Username</label>
               <input
@@ -1355,6 +1454,48 @@ export default function App() {
                 placeholder="Password"
                 autoComplete="current-password"
               />
+            </div>
+
+                        <div style={{ ...styles.card, padding: 14 }}>
+              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }}>API da usare per il login</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="loginApiMode"
+                    checked={apiMode === "render"}
+                    onChange={() => setApiMode("render")}
+                  />
+                  Usa Render
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="loginApiMode"
+                    checked={apiMode === "localhost"}
+                    onChange={() => setApiMode("localhost")}
+                  />
+                  Usa localhost
+                </label>
+                {apiMode === "localhost" && (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <label style={{ ...styles.label, marginBottom: 0 }}>Porta localhost</label>
+                    <input
+                      style={{ ...styles.input, maxWidth: 160 }}
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={localApiPort}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                        setLocalApiPort(normalizeLocalApiPort(e.target.value))
+                      }
+                    />
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      URL: http://localhost:{normalizeLocalApiPort(localApiPort)}/api
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {loginError && <div style={{ color: "#b91c1c", fontSize: 13 }}>{loginError}</div>}
@@ -1469,6 +1610,13 @@ export default function App() {
               <Settings size={16} />
               Impostazioni
             </BasicButton>
+
+            {currentUser?.isAdmin && (
+              <BasicButton onClick={openAdminUsers}>
+                <Users size={16} />
+                Admin utenti
+              </BasicButton>
+            )}
 
             <BasicButton onClick={handleLogout}>Esci</BasicButton>
 
@@ -2124,10 +2272,6 @@ export default function App() {
         onSwapButtonEnabledChange={setPendingSwapButtonEnabled}
         themeButtonEnabled={pendingThemeButtonEnabled}
         onThemeButtonEnabledChange={setPendingThemeButtonEnabled}
-        apiMode={pendingApiMode}
-        onApiModeChange={setPendingApiMode}
-        localApiPort={pendingLocalApiPort}
-        onLocalApiPortChange={setPendingLocalApiPort}
       />
 
       <FilteredDrawersModal
@@ -2147,6 +2291,14 @@ export default function App() {
           openDrawer(drawer);
           setFilterModal({ ...filterModal, isOpen: false });
         }}
+      />
+
+      <AdminUsersModal
+        isOpen={showAdminUsers}
+        onClose={() => setShowAdminUsers(false)}
+        loading={adminUsersLoading}
+        error={adminUsersError}
+        users={adminUsers}
       />
     </div>
   );
