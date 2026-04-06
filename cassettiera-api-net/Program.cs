@@ -32,8 +32,6 @@ string jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET")
     ?? "change-me-in-render";
 // HS256 richiede almeno 256 bit: deriviamo sempre una chiave da 32 byte.
 byte[] jwtKeyBytes = SHA256.HashData(Encoding.UTF8.GetBytes(jwtSecret));
-const string defaultApiMode = "render";
-const int defaultLocalApiPort = 5285;
 
 // 🔹 Conversione automatica se formato URL postgres://
 if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
@@ -216,7 +214,7 @@ app.MapGet("/api/user-settings", async (HttpRequest request) =>
     await conn.OpenAsync();
 
     await using var cmd = new NpgsqlCommand("""
-        SELECT export_button_enabled, swap_button_enabled, theme_button_enabled, api_mode, local_api_port
+        SELECT export_button_enabled, swap_button_enabled, theme_button_enabled
         FROM user_settings
         WHERE user_id = @user_id
         LIMIT 1
@@ -231,9 +229,7 @@ app.MapGet("/api/user-settings", async (HttpRequest request) =>
         {
             exportButtonEnabled = true,
             swapButtonEnabled = true,
-            themeButtonEnabled = true,
-            apiMode = defaultApiMode,
-            localApiPort = defaultLocalApiPort
+            themeButtonEnabled = true
         });
     }
 
@@ -241,9 +237,7 @@ app.MapGet("/api/user-settings", async (HttpRequest request) =>
     {
         exportButtonEnabled = reader.GetBoolean(reader.GetOrdinal("export_button_enabled")),
         swapButtonEnabled = reader.GetBoolean(reader.GetOrdinal("swap_button_enabled")),
-        themeButtonEnabled = reader.GetBoolean(reader.GetOrdinal("theme_button_enabled")),
-        apiMode = NormalizeApiMode(reader.GetString(reader.GetOrdinal("api_mode"))),
-        localApiPort = NormalizeLocalApiPort(reader.GetInt32(reader.GetOrdinal("local_api_port")))
+        themeButtonEnabled = reader.GetBoolean(reader.GetOrdinal("theme_button_enabled"))
     });
 });
 
@@ -256,21 +250,17 @@ app.MapPut("/api/user-settings", async (HttpRequest request, UserSettingsInput b
     var exportButtonEnabled = body.ExportButtonEnabled ?? true;
     var swapButtonEnabled = body.SwapButtonEnabled ?? true;
     var themeButtonEnabled = body.ThemeButtonEnabled ?? true;
-    var apiMode = NormalizeApiMode(body.ApiMode);
-    var localApiPort = NormalizeLocalApiPort(body.LocalApiPort);
 
     await using var conn = new NpgsqlConnection(connString);
     await conn.OpenAsync();
 
     await using var cmd = new NpgsqlCommand("""
-        INSERT INTO user_settings (user_id, export_button_enabled, swap_button_enabled, theme_button_enabled, api_mode, local_api_port, updated_at)
-        VALUES (@user_id, @export_button_enabled, @swap_button_enabled, @theme_button_enabled, @api_mode, @local_api_port, NOW())
+        INSERT INTO user_settings (user_id, export_button_enabled, swap_button_enabled, theme_button_enabled, updated_at)
+        VALUES (@user_id, @export_button_enabled, @swap_button_enabled, @theme_button_enabled, NOW())
         ON CONFLICT (user_id) DO UPDATE
         SET export_button_enabled = EXCLUDED.export_button_enabled,
             swap_button_enabled = EXCLUDED.swap_button_enabled,
             theme_button_enabled = EXCLUDED.theme_button_enabled,
-            api_mode = EXCLUDED.api_mode,
-            local_api_port = EXCLUDED.local_api_port,
             updated_at = NOW()
     """, conn);
 
@@ -278,8 +268,6 @@ app.MapPut("/api/user-settings", async (HttpRequest request, UserSettingsInput b
     cmd.Parameters.AddWithValue("export_button_enabled", exportButtonEnabled);
     cmd.Parameters.AddWithValue("swap_button_enabled", swapButtonEnabled);
     cmd.Parameters.AddWithValue("theme_button_enabled", themeButtonEnabled);
-    cmd.Parameters.AddWithValue("api_mode", apiMode);
-    cmd.Parameters.AddWithValue("local_api_port", localApiPort);
 
     await cmd.ExecuteNonQueryAsync();
 
@@ -287,9 +275,7 @@ app.MapPut("/api/user-settings", async (HttpRequest request, UserSettingsInput b
     {
         exportButtonEnabled,
         swapButtonEnabled,
-        themeButtonEnabled,
-        apiMode,
-        localApiPort
+        themeButtonEnabled
     });
 });
 
@@ -315,8 +301,6 @@ app.MapGet("/api/admin/users-settings", async (HttpRequest request) =>
             COALESCE(s.export_button_enabled, TRUE) AS export_button_enabled,
             COALESCE(s.swap_button_enabled, TRUE) AS swap_button_enabled,
             COALESCE(s.theme_button_enabled, TRUE) AS theme_button_enabled,
-            COALESCE(s.api_mode, 'render') AS api_mode,
-            COALESCE(s.local_api_port, 5285) AS local_api_port,
             s.updated_at AS settings_updated_at
         FROM users u
         LEFT JOIN user_settings s ON s.user_id = u.id
@@ -344,8 +328,6 @@ app.MapGet("/api/admin/users-settings", async (HttpRequest request) =>
                 exportButtonEnabled = reader.GetBoolean(reader.GetOrdinal("export_button_enabled")),
                 swapButtonEnabled = reader.GetBoolean(reader.GetOrdinal("swap_button_enabled")),
                 themeButtonEnabled = reader.GetBoolean(reader.GetOrdinal("theme_button_enabled")),
-                apiMode = NormalizeApiMode(reader.GetString(reader.GetOrdinal("api_mode"))),
-                localApiPort = NormalizeLocalApiPort(reader.GetInt32(reader.GetOrdinal("local_api_port"))),
                 updatedAt = settingsUpdatedAt
             }
         });
@@ -704,10 +686,11 @@ static async Task EnsureUserSettingsTableAsync(string connectionString)
             export_button_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             swap_button_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             theme_button_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-            api_mode VARCHAR(20) NOT NULL DEFAULT 'render' CHECK (api_mode IN ('render', 'localhost')),
-            local_api_port INTEGER NOT NULL DEFAULT 5285 CHECK (local_api_port BETWEEN 1 AND 65535),
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-        )
+        );
+
+        ALTER TABLE user_settings DROP COLUMN IF EXISTS api_mode;
+        ALTER TABLE user_settings DROP COLUMN IF EXISTS local_api_port;
     """, conn);
 
     await cmd.ExecuteNonQueryAsync();
@@ -773,21 +756,6 @@ static ClaimsPrincipal? TryGetAuthenticatedPrincipal(HttpRequest request, byte[]
     {
         return null;
     }
-}
-
-static string NormalizeApiMode(string? apiMode)
-{
-    return string.Equals(apiMode, "localhost", StringComparison.OrdinalIgnoreCase)
-        ? "localhost"
-        : defaultApiMode;
-}
-
-static int NormalizeLocalApiPort(int? localApiPort)
-{
-    if (localApiPort is >= 1 and <= 65535)
-        return localApiPort.Value;
-
-    return defaultLocalApiPort;
 }
 
 // 🔹 MODELLI (dopo app.Run())
@@ -867,10 +835,4 @@ public class UserSettingsInput
 
     [JsonPropertyName("themeButtonEnabled")]
     public bool? ThemeButtonEnabled { get; set; }
-
-    [JsonPropertyName("apiMode")]
-    public string? ApiMode { get; set; }
-
-    [JsonPropertyName("localApiPort")]
-    public int? LocalApiPort { get; set; }
 }

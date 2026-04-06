@@ -59,8 +59,6 @@ type UserSettings = {
   exportButtonEnabled: boolean;
   swapButtonEnabled: boolean;
   themeButtonEnabled: boolean;
-  apiMode: ApiMode;
-  localApiPort: number;
 };
 
 type AuthUser = {
@@ -78,8 +76,6 @@ type AdminUserSettingsRow = {
     exportButtonEnabled: boolean;
     swapButtonEnabled: boolean;
     themeButtonEnabled: boolean;
-    apiMode: ApiMode;
-    localApiPort: number;
     updatedAt: string | null;
   };
 };
@@ -623,8 +619,6 @@ function AdminUsersModal({ isOpen, onClose, loading, error, users }: AdminUsersM
                   <th style={{ padding: "12px 10px" }}>Export</th>
                   <th style={{ padding: "12px 10px" }}>Swap</th>
                   <th style={{ padding: "12px 10px" }}>Tema</th>
-                  <th style={{ padding: "12px 10px" }}>API</th>
-                  <th style={{ padding: "12px 10px" }}>Porta</th>
                   <th style={{ padding: "12px 10px" }}>Ultimo salvataggio</th>
                 </tr>
               </thead>
@@ -639,8 +633,6 @@ function AdminUsersModal({ isOpen, onClose, loading, error, users }: AdminUsersM
                     <td style={{ padding: "10px" }}>{user.settings.exportButtonEnabled ? "On" : "Off"}</td>
                     <td style={{ padding: "10px" }}>{user.settings.swapButtonEnabled ? "On" : "Off"}</td>
                     <td style={{ padding: "10px" }}>{user.settings.themeButtonEnabled ? "On" : "Off"}</td>
-                    <td style={{ padding: "10px" }}>{user.settings.apiMode}</td>
-                    <td style={{ padding: "10px" }}>{user.settings.localApiPort}</td>
                     <td style={{ padding: "10px" }}>
                       {user.settings.updatedAt
                         ? new Date(user.settings.updatedAt).toLocaleString("it-IT")
@@ -697,12 +689,6 @@ export default function App() {
     normalizeApiMode(window.localStorage.getItem("apiMode"))
   );
   const [localApiPort, setLocalApiPort] = useState<string>(() =>
-    normalizeLocalApiPort(window.localStorage.getItem("localApiPort"))
-  );
-  const [pendingApiMode, setPendingApiMode] = useState<ApiMode>(() =>
-    normalizeApiMode(window.localStorage.getItem("apiMode"))
-  );
-  const [pendingLocalApiPort, setPendingLocalApiPort] = useState<string>(() =>
     normalizeLocalApiPort(window.localStorage.getItem("localApiPort"))
   );
   const [exportButtonEnabled, setExportButtonEnabled] = useState<boolean>(() => {
@@ -795,22 +781,10 @@ export default function App() {
       }) as CSSProperties;
 
   const renderApiUrl = "https://cassettiera.onrender.com/api";
-  const buildApiBaseUrl = (mode: ApiMode, port: string) =>
-    mode === "localhost"
-      ? `http://localhost:${normalizeLocalApiPort(port)}/api`
-      : renderApiUrl;
-
   const localApiUrl = `http://localhost:${normalizeLocalApiPort(localApiPort)}/api`;
   const apiBaseUrl = apiMode === "localhost" ? localApiUrl : renderApiUrl;
 
   const applyUserSettings = (settings: UserSettings) => {
-    const nextApiMode = normalizeApiMode(settings.apiMode);
-    const nextLocalApiPort = normalizeLocalApiPort(settings.localApiPort);
-
-    setApiMode(nextApiMode);
-    setLocalApiPort(nextLocalApiPort);
-    setPendingApiMode(nextApiMode);
-    setPendingLocalApiPort(nextLocalApiPort);
     setExportButtonEnabled(settings.exportButtonEnabled);
     setSwapButtonEnabled(settings.swapButtonEnabled);
     setThemeButtonEnabled(settings.themeButtonEnabled);
@@ -825,8 +799,6 @@ export default function App() {
   };
 
   const openSettings = () => {
-    setPendingApiMode(apiMode);
-    setPendingLocalApiPort(localApiPort);
     setPendingExportButtonEnabled(exportButtonEnabled);
     setPendingSwapButtonEnabled(swapButtonEnabled);
     setPendingThemeButtonEnabled(themeButtonEnabled);
@@ -834,20 +806,17 @@ export default function App() {
   };
 
   const closeSettings = async () => {
-    const oldApiBaseUrl = apiBaseUrl;
     const nextSettings: UserSettings = {
       exportButtonEnabled: pendingExportButtonEnabled,
       swapButtonEnabled: pendingSwapButtonEnabled,
       themeButtonEnabled: pendingThemeButtonEnabled,
-      apiMode: normalizeApiMode(pendingApiMode),
-      localApiPort: Number(normalizeLocalApiPort(pendingLocalApiPort)),
     };
 
     setShowSettings(false);
     applyUserSettings(nextSettings);
 
     try {
-      await fetchJson<UserSettings>(`${oldApiBaseUrl}/user-settings`, {
+      await fetchJson<UserSettings>(`${apiBaseUrl}/user-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextSettings),
@@ -859,12 +828,6 @@ export default function App() {
           ? `Impostazioni salvate solo localmente: ${settingsError.message}`
           : "Impostazioni salvate solo localmente."
       );
-    }
-
-    const newApiBaseUrl = buildApiBaseUrl(nextSettings.apiMode, String(nextSettings.localApiPort));
-
-    if (newApiBaseUrl !== oldApiBaseUrl) {
-      void loadDrawers(newApiBaseUrl);
     }
   };
 
@@ -944,13 +907,11 @@ export default function App() {
         const profile = await loadCurrentUser();
         const settings = await fetchJson<UserSettings>(`${apiBaseUrl}/user-settings`);
         applyUserSettings(settings);
-        const nextBaseUrl = buildApiBaseUrl(normalizeApiMode(settings.apiMode), String(settings.localApiPort));
-
         if (profile.isAdmin && showAdminUsers) {
-          await loadAdminUsers(nextBaseUrl);
+          await loadAdminUsers(apiBaseUrl);
         }
 
-        await loadDrawers(nextBaseUrl);
+        await loadDrawers(apiBaseUrl);
       } catch (settingsError) {
         console.error("Errore caricamento impostazioni utente:", settingsError);
         setCurrentUser(null);
