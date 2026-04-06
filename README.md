@@ -111,7 +111,6 @@ DATABASE_URL=postgres://user:password@host:port/db
 
 ## 📈 Roadmap
 
-- Pagina admin per creare o cancellare utenti
 - Password dimenticata con Resend ?
 - Backup cloud del database ?
 - Lettura e caricamento da pistola ( toggle lettura pistola nelle impostazioni)

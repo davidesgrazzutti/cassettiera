@@ -59,8 +59,12 @@ await EnsureUserSettingsTableAsync(connString);
 await EnsureUsersIsAdminColumnAsync(connString);
 
 // 🔹 GET ALL
-app.MapGet("/api/drawers", async () =>
+app.MapGet("/api/drawers", async (HttpRequest request) =>
 {
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
     const string sql = """
         SELECT
           c.id,
@@ -619,8 +623,12 @@ app.MapPatch("/api/admin/users/{id:int}/admin", async (HttpRequest request, int 
 });
 
 // 🔹 GET BY ID
-app.MapGet("/api/drawers/{id:int}", async (int id) =>
+app.MapGet("/api/drawers/{id:int}", async (HttpRequest request, int id) =>
 {
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
     const string sql = """
         SELECT
           c.id,
@@ -675,8 +683,12 @@ app.MapGet("/api/drawers/{id:int}", async (int id) =>
 });
 
 // 🔹 POST
-app.MapPost("/api/drawers", async (DrawerInput body) =>
+app.MapPost("/api/drawers", async (HttpRequest request, DrawerInput body) =>
 {
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
     var cassetto = body.Cassetto;
     var stato = body.Stato ?? "Vuoto";
     var note = body.Note ?? "";
@@ -709,8 +721,12 @@ app.MapPost("/api/drawers", async (DrawerInput body) =>
 });
 
 // 🔹 PUT
-app.MapPut("/api/drawers/{id:int}", async (int id, DrawerUpdateInput body) =>
+app.MapPut("/api/drawers/{id:int}", async (HttpRequest request, int id, DrawerUpdateInput body) =>
 {
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
     var stato = body.Stato;
     var note = body.Note ?? "";
     var articoli = body.Articoli ?? new();
@@ -779,8 +795,12 @@ app.MapPut("/api/drawers/{id:int}", async (int id, DrawerUpdateInput body) =>
 });
 
 // 🔹 DELETE
-app.MapDelete("/api/drawers/{id:int}", async (int id) =>
+app.MapDelete("/api/drawers/{id:int}", async (HttpRequest request, int id) =>
 {
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
     await using var conn = new NpgsqlConnection(connString);
     await conn.OpenAsync();
     await using var tx = await conn.BeginTransactionAsync();
@@ -804,8 +824,12 @@ app.MapDelete("/api/drawers/{id:int}", async (int id) =>
 });
 
 // 🔹 SWAP
-app.MapPost("/api/swap", async (SwapInput body) =>
+app.MapPost("/api/swap", async (HttpRequest request, SwapInput body) =>
 {
+    var userId = TryGetAuthenticatedUserId(request, jwtKeyBytes);
+    if (userId is null)
+        return Results.Unauthorized();
+
     var id1 = body.Id1;
     var id2 = body.Id2;
 
