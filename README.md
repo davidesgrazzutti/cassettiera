@@ -111,11 +111,15 @@ DATABASE_URL=postgres://user:password@host:port/db
 
 ## 📈 Roadmap
 
-- Password dimenticata con Resend ?
+- admin da impostazione deve salvare il db in formato json 
+- salvare tutte le operazioni fatte dagli utenti come rimuovere aggiungere cassetti,articoli,ecc..
+- annullare tutte le operazioni che ha fatto un utente ( reverse, rollback ?)
 - Backup cloud del database ?
+- Password dimenticata con Resend ?
 - Lettura e caricamento da pistola ( toggle lettura pistola nelle impostazioni)
 - Storico movimenti  
 - Analytics avanzate  
+- Tema scuro da sistemare
 
 ---
 

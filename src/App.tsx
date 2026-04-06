@@ -332,23 +332,27 @@ function StatCard({ title, value, icon: Icon, onClick }: StatCardProps) {
 type SettingsModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  isAdmin: boolean;
   exportButtonEnabled: boolean;
   onExportButtonEnabledChange: (value: boolean) => void;
   swapButtonEnabled: boolean;
   onSwapButtonEnabledChange: (value: boolean) => void;
   themeButtonEnabled: boolean;
   onThemeButtonEnabledChange: (value: boolean) => void;
+  onDownloadDbJson: () => Promise<void>;
 };
 
 function SettingsModal({
   isOpen,
   onClose,
+  isAdmin,
   exportButtonEnabled,
   onExportButtonEnabledChange,
   swapButtonEnabled,
   onSwapButtonEnabledChange,
   themeButtonEnabled,
   onThemeButtonEnabledChange,
+  onDownloadDbJson,
 }: SettingsModalProps) {
   if (!isOpen) return null;
 
@@ -445,6 +449,25 @@ function SettingsModal({
             <div style={{ fontSize: 14, color: "#64748b", marginBottom: 8 }}>Versione</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: "#0f172a" }}>1.0.0</div>
           </div>
+
+          {isAdmin && (
+            <div style={{ ...styles.card, padding: 16 }}>
+              <div style={{ fontSize: 14, color: "#64748b", marginBottom: 10 }}>Amministrazione</div>
+              <button
+                type="button"
+                onClick={() => {
+                  void onDownloadDbJson();
+                }}
+                style={{
+                  ...styles.buttonPrimary,
+                  justifyContent: "center",
+                }}
+              >
+                <FileDown size={16} />
+                Scarica DB (JSON)
+              </button>
+            </div>
+          )}
 
         </div>
 
@@ -1008,6 +1031,48 @@ export default function App() {
         settingsError instanceof Error
           ? `Impostazioni salvate solo localmente: ${settingsError.message}`
           : "Impostazioni salvate solo localmente."
+      );
+    }
+  };
+
+  const downloadDatabaseJson = async () => {
+    try {
+      const authToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+      const headers = new Headers();
+
+      if (authToken) {
+        headers.set("Authorization", `Bearer ${authToken}`);
+      }
+
+      const response = await fetch(`${apiBaseUrl}/admin/db-export`, {
+        method: "GET",
+        headers,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText || "Errore esportazione database.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const contentDisposition = response.headers.get("Content-Disposition") ?? "";
+      const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+      const fileName = match?.[1] || `cassettiera-db-export-${new Date().toISOString()}.json`;
+
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      console.error("Errore download DB JSON:", downloadError);
+      setError(
+        downloadError instanceof Error
+          ? `Errore download DB JSON: ${downloadError.message}`
+          : "Errore download DB JSON."
       );
     }
   };
@@ -2499,12 +2564,14 @@ export default function App() {
       <SettingsModal
         isOpen={showSettings}
         onClose={closeSettings}
+        isAdmin={Boolean(currentUser?.isAdmin)}
         exportButtonEnabled={pendingExportButtonEnabled}
         onExportButtonEnabledChange={setPendingExportButtonEnabled}
         swapButtonEnabled={pendingSwapButtonEnabled}
         onSwapButtonEnabledChange={setPendingSwapButtonEnabled}
         themeButtonEnabled={pendingThemeButtonEnabled}
         onThemeButtonEnabledChange={setPendingThemeButtonEnabled}
+        onDownloadDbJson={downloadDatabaseJson}
       />
 
       <FilteredDrawersModal

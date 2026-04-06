@@ -50,8 +50,7 @@ if (rawConnString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase
         Database = uri.AbsolutePath.Trim('/'),
         Username = username,
         Password = password,
-        SslMode = Npgsql.SslMode.Require,
-        TrustServerCertificate = true
+        SslMode = Npgsql.SslMode.Require
     }.ConnectionString;
 }
 
@@ -622,6 +621,130 @@ app.MapPatch("/api/admin/users/{id:int}/admin", async (HttpRequest request, int 
     }
 });
 
+
+app.MapGet("/api/admin/db-export", async (HttpRequest request) =>
+{
+    var principal = TryGetAuthenticatedPrincipal(request, jwtKeyBytes);
+    if (principal is null)
+        return Results.Unauthorized();
+
+    var isAdmin = principal.FindFirst("is_admin")?.Value;
+    if (!string.Equals(isAdmin, "true", StringComparison.OrdinalIgnoreCase))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    await using var conn = new NpgsqlConnection(connString);
+    await conn.OpenAsync();
+
+    var cassetti = new List<object>();
+    await using (var cmd = new NpgsqlCommand("""
+        SELECT id, codice, stato, ultimo_aggiornamento, note
+        FROM cassetti
+        ORDER BY codice
+    """, conn))
+    await using (var reader = await cmd.ExecuteReaderAsync())
+    {
+        while (await reader.ReadAsync())
+        {
+            cassetti.Add(new
+            {
+                id = reader.GetInt32(reader.GetOrdinal("id")),
+                codice = reader.GetString(reader.GetOrdinal("codice")),
+                stato = reader.GetString(reader.GetOrdinal("stato")),
+                ultimoAggiornamento = reader.GetDateTime(reader.GetOrdinal("ultimo_aggiornamento")),
+                note = reader["note"]?.ToString() ?? ""
+            });
+        }
+    }
+
+    var articoli = new List<object>();
+    await using (var cmd = new NpgsqlCommand("""
+        SELECT id, cassetto_id, codice_barre, codice_interno, articolo, quantita, um, quantita_minima, note
+        FROM articoli
+        ORDER BY cassetto_id, id
+    """, conn))
+    await using (var reader = await cmd.ExecuteReaderAsync())
+    {
+        while (await reader.ReadAsync())
+        {
+            articoli.Add(new
+            {
+                id = reader.GetInt32(reader.GetOrdinal("id")),
+                cassettoId = reader.GetInt32(reader.GetOrdinal("cassetto_id")),
+                codiceBarre = reader["codice_barre"]?.ToString() ?? "",
+                codiceInterno = reader["codice_interno"]?.ToString() ?? "",
+                articolo = reader["articolo"]?.ToString() ?? "",
+                quantita = reader.GetDecimal(reader.GetOrdinal("quantita")),
+                um = reader["um"]?.ToString() ?? "pz",
+                quantitaMinima = reader.GetDecimal(reader.GetOrdinal("quantita_minima")),
+                note = reader["note"]?.ToString() ?? ""
+            });
+        }
+    }
+
+    var users = new List<object>();
+    await using (var cmd = new NpgsqlCommand("""
+        SELECT id, username, is_admin, is_active, created_at
+        FROM users
+        ORDER BY username
+    """, conn))
+    await using (var reader = await cmd.ExecuteReaderAsync())
+    {
+        while (await reader.ReadAsync())
+        {
+            users.Add(new
+            {
+                id = reader.GetInt32(reader.GetOrdinal("id")),
+                username = reader.GetString(reader.GetOrdinal("username")),
+                isAdmin = reader.GetBoolean(reader.GetOrdinal("is_admin")),
+                isActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
+                createdAt = reader.GetDateTime(reader.GetOrdinal("created_at"))
+            });
+        }
+    }
+
+    var userSettings = new List<object>();
+    await using (var cmd = new NpgsqlCommand("""
+        SELECT user_id, export_button_enabled, swap_button_enabled, theme_button_enabled, updated_at
+        FROM user_settings
+        ORDER BY user_id
+    """, conn))
+    await using (var reader = await cmd.ExecuteReaderAsync())
+    {
+        while (await reader.ReadAsync())
+        {
+            userSettings.Add(new
+            {
+                userId = reader.GetInt32(reader.GetOrdinal("user_id")),
+                exportButtonEnabled = reader.GetBoolean(reader.GetOrdinal("export_button_enabled")),
+                swapButtonEnabled = reader.GetBoolean(reader.GetOrdinal("swap_button_enabled")),
+                themeButtonEnabled = reader.GetBoolean(reader.GetOrdinal("theme_button_enabled")),
+                updatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at"))
+            });
+        }
+    }
+
+    var payload = new
+    {
+        generatedAt = DateTime.UtcNow,
+        source = "cassettiera",
+        data = new
+        {
+            cassetti,
+            articoli,
+            users,
+            userSettings
+        }
+    };
+
+    var fileName = $"cassettiera-db-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json";
+    var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true
+    });
+
+    return Results.File(Encoding.UTF8.GetBytes(json), "application/json", fileName);
+});
+
 // 🔹 GET BY ID
 app.MapGet("/api/drawers/{id:int}", async (HttpRequest request, int id) =>
 {
@@ -1068,7 +1191,7 @@ static ClaimsPrincipal? TryGetAuthenticatedPrincipal(HttpRequest request, byte[]
 public class DrawerInput
 {
     [JsonPropertyName("cassetto")]
-    public string Cassetto { get; set; }
+    public string Cassetto { get; set; } = string.Empty;
     
     [JsonPropertyName("stato")]
     public string? Stato { get; set; }
@@ -1104,7 +1227,7 @@ public class ArticoloInput
 public class DrawerUpdateInput
 {
     [JsonPropertyName("stato")]
-    public string Stato { get; set; }
+    public string Stato { get; set; } = string.Empty;
     
     [JsonPropertyName("note")]
     public string? Note { get; set; }
