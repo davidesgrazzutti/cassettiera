@@ -54,6 +54,31 @@ type DrawerSummary = {
 
 type ApiMode = "render" | "localhost";
 
+type UserSettings = {
+  exportButtonEnabled: boolean;
+  swapButtonEnabled: boolean;
+  themeButtonEnabled: boolean;
+  apiMode: ApiMode;
+  localApiPort: number;
+};
+
+const DEFAULT_LOCAL_API_PORT = "5285";
+
+function normalizeApiMode(value: string | null | undefined): ApiMode {
+  return value === "localhost" ? "localhost" : "render";
+}
+
+function normalizeLocalApiPort(value: string | number | null | undefined): string {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return parsed >= 1 && parsed <= 65535 ? String(parsed) : DEFAULT_LOCAL_API_PORT;
+}
+
+function getStoredBoolean(key: string, fallback = true): boolean {
+  const saved = window.localStorage.getItem(key);
+  if (saved == null) return fallback;
+  return saved !== "false";
+}
+
 const initialDrawers: Cassetto[] = Array.from({ length: 80 }, (_, i) => {
   const index = i + 1;
   const code = `C${String(index).padStart(2, "0")}`;
@@ -615,18 +640,26 @@ export default function App() {
   const [swapSelection, setSwapSelection] = useState<Cassetto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [apiMode, setApiMode] = useState<ApiMode>("render");
-  const [localApiPort, setLocalApiPort] = useState<string>("5285");
-  const [pendingApiMode, setPendingApiMode] = useState<ApiMode>("render");
-  const [pendingLocalApiPort, setPendingLocalApiPort] = useState<string>("5285");
+  const [apiMode, setApiMode] = useState<ApiMode>(() =>
+    normalizeApiMode(window.localStorage.getItem("apiMode"))
+  );
+  const [localApiPort, setLocalApiPort] = useState<string>(() =>
+    normalizeLocalApiPort(window.localStorage.getItem("localApiPort"))
+  );
+  const [pendingApiMode, setPendingApiMode] = useState<ApiMode>(() =>
+    normalizeApiMode(window.localStorage.getItem("apiMode"))
+  );
+  const [pendingLocalApiPort, setPendingLocalApiPort] = useState<string>(() =>
+    normalizeLocalApiPort(window.localStorage.getItem("localApiPort"))
+  );
   const [exportButtonEnabled, setExportButtonEnabled] = useState<boolean>(() => {
-    return window.localStorage.getItem("exportButtonEnabled") !== "false";
+    return getStoredBoolean("exportButtonEnabled");
   });
   const [swapButtonEnabled, setSwapButtonEnabled] = useState<boolean>(() => {
-    return window.localStorage.getItem("swapButtonEnabled") !== "false";
+    return getStoredBoolean("swapButtonEnabled");
   });
   const [themeButtonEnabled, setThemeButtonEnabled] = useState<boolean>(() => {
-    return window.localStorage.getItem("themeButtonEnabled") !== "false";
+    return getStoredBoolean("themeButtonEnabled");
   });
   const [pendingExportButtonEnabled, setPendingExportButtonEnabled] = useState<boolean>(true);
   const [pendingSwapButtonEnabled, setPendingSwapButtonEnabled] = useState<boolean>(true);
@@ -653,6 +686,14 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem("themeButtonEnabled", String(themeButtonEnabled));
   }, [themeButtonEnabled]);
+
+  useEffect(() => {
+    window.localStorage.setItem("apiMode", apiMode);
+  }, [apiMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("localApiPort", normalizeLocalApiPort(localApiPort));
+  }, [localApiPort]);
 
   useEffect(() => {
     document.body.style.backgroundColor = themeMode === "dark" ? "#0b1220" : "#f1f5f9";
@@ -701,8 +742,34 @@ export default function App() {
       }) as CSSProperties;
 
   const renderApiUrl = "https://cassettiera.onrender.com/api";
-  const localApiUrl = `http://localhost:${localApiPort || "5285"}/api`;
+  const buildApiBaseUrl = (mode: ApiMode, port: string) =>
+    mode === "localhost"
+      ? `http://localhost:${normalizeLocalApiPort(port)}/api`
+      : renderApiUrl;
+
+  const localApiUrl = `http://localhost:${normalizeLocalApiPort(localApiPort)}/api`;
   const apiBaseUrl = apiMode === "localhost" ? localApiUrl : renderApiUrl;
+
+  const applyUserSettings = (settings: UserSettings) => {
+    const nextApiMode = normalizeApiMode(settings.apiMode);
+    const nextLocalApiPort = normalizeLocalApiPort(settings.localApiPort);
+
+    setApiMode(nextApiMode);
+    setLocalApiPort(nextLocalApiPort);
+    setPendingApiMode(nextApiMode);
+    setPendingLocalApiPort(nextLocalApiPort);
+    setExportButtonEnabled(settings.exportButtonEnabled);
+    setSwapButtonEnabled(settings.swapButtonEnabled);
+    setThemeButtonEnabled(settings.themeButtonEnabled);
+    setPendingExportButtonEnabled(settings.exportButtonEnabled);
+    setPendingSwapButtonEnabled(settings.swapButtonEnabled);
+    setPendingThemeButtonEnabled(settings.themeButtonEnabled);
+
+    if (!settings.swapButtonEnabled) {
+      setSwapMode(false);
+      setSwapSelection([]);
+    }
+  };
 
   const openSettings = () => {
     setPendingApiMode(apiMode);
@@ -713,31 +780,54 @@ export default function App() {
     setShowSettings(true);
   };
 
-  const closeSettings = () => {
+  const closeSettings = async () => {
     const oldApiBaseUrl = apiBaseUrl;
+    const nextSettings: UserSettings = {
+      exportButtonEnabled: pendingExportButtonEnabled,
+      swapButtonEnabled: pendingSwapButtonEnabled,
+      themeButtonEnabled: pendingThemeButtonEnabled,
+      apiMode: normalizeApiMode(pendingApiMode),
+      localApiPort: Number(normalizeLocalApiPort(pendingLocalApiPort)),
+    };
 
     setShowSettings(false);
-    setApiMode(pendingApiMode);
-    setLocalApiPort(pendingLocalApiPort || "5285");
-    setExportButtonEnabled(pendingExportButtonEnabled);
-    setSwapButtonEnabled(pendingSwapButtonEnabled);
-    setThemeButtonEnabled(pendingThemeButtonEnabled);
+    applyUserSettings(nextSettings);
 
-    if (!pendingSwapButtonEnabled) {
-      setSwapMode(false);
-      setSwapSelection([]);
+    try {
+      await fetchJson<UserSettings>(`${oldApiBaseUrl}/user-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextSettings),
+      });
+    } catch (settingsError) {
+      console.error("Errore salvataggio impostazioni:", settingsError);
+      setError(
+        settingsError instanceof Error
+          ? `Impostazioni salvate solo localmente: ${settingsError.message}`
+          : "Impostazioni salvate solo localmente."
+      );
     }
 
-    const newLocalApiUrl = `http://localhost:${pendingLocalApiPort || "5285"}/api`;
-    const newApiBaseUrl = pendingApiMode === "localhost" ? newLocalApiUrl : renderApiUrl;
+    const newApiBaseUrl = buildApiBaseUrl(nextSettings.apiMode, String(nextSettings.localApiPort));
 
     if (newApiBaseUrl !== oldApiBaseUrl) {
-      loadDrawers(newApiBaseUrl);
+      void loadDrawers(newApiBaseUrl);
     }
   };
 
   const fetchJson = async <T,>(url: string, options?: RequestInit): Promise<T> => {
-    const response = await fetch(url, options);
+    const headers = new Headers(options?.headers);
+    const authToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+
+    if (authToken && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${authToken}`);
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
     if (!response.ok) {
       const text = await response.text();
       throw new Error(text || response.statusText);
@@ -769,7 +859,19 @@ export default function App() {
     if (!isAuthenticated) {
       return;
     }
-    loadDrawers();
+
+    const bootstrap = async () => {
+      try {
+        const settings = await fetchJson<UserSettings>(`${apiBaseUrl}/user-settings`);
+        applyUserSettings(settings);
+        await loadDrawers(buildApiBaseUrl(normalizeApiMode(settings.apiMode), String(settings.localApiPort)));
+      } catch (settingsError) {
+        console.error("Errore caricamento impostazioni utente:", settingsError);
+        await loadDrawers();
+      }
+    };
+
+    void bootstrap();
   }, [isAuthenticated]);
 
   const filtered = useMemo(() => {
